@@ -126,10 +126,10 @@ export default function HoyPage() {
             <p className="text-xl font-bold">{summary.completedTasksCount}</p>
             <p className="text-xs text-muted">Completadas hoy</p>
           </div>
-          <Link href="/compras" className="card p-3">
+          <div className="card p-3">
             <p className="text-xl font-bold">{summary.pendingShoppingCount}</p>
             <p className="text-xs text-muted">Compras pendientes</p>
-          </Link>
+          </div>
           <Link href="/gastos" className="card p-3">
             <p className="text-xl font-bold">{money(summary.expensesThisMonth)}</p>
             <p className="text-xs text-muted">Gastado este mes</p>
