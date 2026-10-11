@@ -84,7 +84,7 @@ export default function HoyPage() {
         <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.max(members.length, 1)}, minmax(0, 1fr))` }}>
           {members.map((m) => {
             const memberTasks = tasks.filter((t) => t.assignees?.includes(m.id));
-            const href = m.role === "child" ? `/hijos?child=${m.id}` : `/integrante/${m.id}`;
+            const href = `/integrante/${m.id}`;
             return (
               <Link key={m.id} href={href} className="card p-1.5 sm:p-3 text-center">
                 <div

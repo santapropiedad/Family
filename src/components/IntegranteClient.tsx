@@ -5,19 +5,28 @@ import { api } from "@/lib/api-client";
 import { useSession } from "@/components/SessionProvider";
 import type { FamilyEvent, Task } from "@/types/domain";
 
-interface Entry {
-  id: string;
-  kind: "event" | "task";
-  title: string;
-  date: string | null;
-  done: boolean;
+function greetingForHour(hour: number): string {
+  if (hour < 12) return "Buenos días";
+  if (hour < 19) return "Buenas tardes";
+  return "Buenas noches";
+}
+
+function formatEventTime(iso: string): string {
+  return new Date(iso).toLocaleString("es-CL", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function IntegranteClient({ memberId }: { memberId: string }) {
   const { members } = useSession();
   const member = members.find((m) => m.id === memberId);
 
-  const [entries, setEntries] = useState<Entry[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [events, setEvents] = useState<FamilyEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
@@ -25,35 +34,16 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
   async function load() {
     setLoading(true);
     const from = new Date();
-    from.setMonth(from.getMonth() - 1);
     const to = new Date();
-    to.setMonth(to.getMonth() + 3);
-    const [eventsRes, tasksRes] = await Promise.all([
+    to.setDate(to.getDate() + 7);
+    const [tasksRes, eventsRes] = await Promise.all([
+      api.get<{ tasks: Task[] }>(`/api/tasks?assignedTo=${memberId}&status=pending`),
       api.get<{ events: FamilyEvent[] }>(
         `/api/events?memberId=${memberId}&from=${from.toISOString()}&to=${to.toISOString()}`
       ),
-      api.get<{ tasks: Task[] }>(`/api/tasks?assignedTo=${memberId}`),
     ]);
-    const eventEntries: Entry[] = eventsRes.events.map((e) => ({
-      id: e.id,
-      kind: "event",
-      title: e.title,
-      date: e.start_at,
-      done: false,
-    }));
-    const taskEntries: Entry[] = tasksRes.tasks.map((t) => ({
-      id: t.id,
-      kind: "task",
-      title: t.title,
-      date: t.due_date,
-      done: t.status === "completed",
-    }));
-    const merged = [...eventEntries, ...taskEntries].sort((a, b) => {
-      if (!a.date) return 1;
-      if (!b.date) return -1;
-      return a.date.localeCompare(b.date);
-    });
-    setEntries(merged);
+    setTasks(tasksRes.tasks);
+    setEvents(eventsRes.events);
     setLoading(false);
   }
 
@@ -71,91 +61,121 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
     load();
   }
 
-  async function toggleDone(entry: Entry) {
-    if (entry.kind !== "task") return;
-    await api.patch(`/api/tasks/${entry.id}`, { status: entry.done ? "pending" : "completed" });
+  async function toggleTask(task: Task) {
+    await api.patch(`/api/tasks/${task.id}`, { status: task.status === "completed" ? "pending" : "completed" });
     load();
   }
 
-  async function removeEntry(entry: Entry) {
-    if (entry.kind === "event") await api.delete(`/api/events/${entry.id}`);
-    else await api.delete(`/api/tasks/${entry.id}`);
-    load();
-  }
+  const today = new Date().toISOString().slice(0, 10);
+  const overdueOrUrgent = tasks.filter((t) => t.priority === "red" || (t.due_date && t.due_date < today));
 
   return (
     <div className="space-y-5">
       <header className="flex items-center gap-3">
         <div
-          className="w-12 h-12 rounded-full flex items-center justify-center text-2xl"
+          className="w-12 h-12 rounded-full flex items-center justify-center text-2xl shrink-0"
           style={{ backgroundColor: (member?.color ?? "#6366f1") + "33" }}
         >
           {member?.avatar_emoji ?? "🙂"}
         </div>
         <div>
-          <h1 className="text-2xl font-bold">{member?.name ?? "Integrante"}</h1>
-          <p className="text-sm text-muted">Tareas y agenda de {member?.name ?? "esta persona"}.</p>
+          <h1 className="text-2xl font-bold">
+            {greetingForHour(new Date().getHours())}, {member?.name ?? "..."}
+          </h1>
+          <p className="text-sm text-muted capitalize">
+            {new Date().toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long" })}
+          </p>
         </div>
       </header>
 
-      <form onSubmit={addTask} className="card p-4 space-y-2">
-        <div className="flex gap-2">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Nueva tarea…"
-            className="flex-1 rounded-xl border px-3 py-2 text-sm bg-transparent"
-          />
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="rounded-xl border px-3 py-2 text-sm bg-transparent"
-          />
-        </div>
-        <button className="rounded-xl bg-primary text-white px-4 py-2 text-sm font-medium">Agregar tarea</button>
-      </form>
+      {loading ? (
+        <p className="text-sm text-muted">Cargando…</p>
+      ) : (
+        <>
+          <section>
+            <h2 className="text-sm font-semibold text-muted mb-2">PRIORIDADES</h2>
+            <div className="card p-3 space-y-1">
+              {overdueOrUrgent.length === 0 && (
+                <p className="text-sm text-muted py-2 px-1">Nada urgente. ¡Buen día!</p>
+              )}
+              {overdueOrUrgent.map((t) => (
+                <div key={t.id} className="flex items-center gap-2.5 px-1 py-2">
+                  <span className={`priority-dot ${t.priority}`} />
+                  <span className="text-sm">{t.title}</span>
+                </div>
+              ))}
+            </div>
+          </section>
 
-      <section>
-        <h2 className="text-sm font-semibold text-muted mb-2">AGENDA</h2>
-        {loading && <p className="text-sm text-muted">Cargando…</p>}
-        {!loading && entries.length === 0 && (
-          <div className="card">
-            <p className="text-sm text-muted p-4">No hay nada agendado todavía.</p>
-          </div>
-        )}
-        {!loading && entries.length > 0 && (
-          <div className="card divide-y">
-            {entries.map((entry) => (
-              <div key={`${entry.kind}-${entry.id}`} className="flex items-center gap-3 px-4 py-3">
-                {entry.kind === "task" ? (
+          <section>
+            <h2 className="text-sm font-semibold text-muted mb-2">TAREAS PENDIENTES</h2>
+            <div className="card divide-y">
+              {tasks.length === 0 && <p className="text-sm text-muted p-4">No hay tareas pendientes.</p>}
+              {tasks.map((t) => (
+                <div key={t.id} className="flex items-center gap-3 px-4 py-3">
                   <input
                     type="checkbox"
-                    checked={entry.done}
-                    onChange={() => toggleDone(entry)}
+                    checked={t.status === "completed"}
+                    onChange={() => toggleTask(t)}
                     className="h-4 w-4"
                   />
-                ) : (
-                  <span className="text-lg">📅</span>
-                )}
-                <div className="flex-1">
-                  <p className={`text-sm ${entry.done ? "line-through text-muted" : ""}`}>{entry.title}</p>
-                  <p className="text-xs text-muted">
-                    {entry.date
-                      ? new Date(entry.date).toLocaleDateString("es-CL", { day: "numeric", month: "short" })
-                      : "Sin fecha"}
-                    {" · "}
-                    {entry.kind === "event" ? "Calendario" : "Tarea"}
-                  </p>
+                  <span className={`priority-dot ${t.priority}`} />
+                  <p className="flex-1 text-sm">{t.title}</p>
+                  {t.due_date && <span className="text-xs text-muted">{t.due_date}</span>}
                 </div>
-                <button onClick={() => removeEntry(entry)} className="text-xs text-muted px-1">
-                  ✕
-                </button>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h2 className="text-sm font-semibold text-muted mb-2">PRÓXIMAMENTE</h2>
+            <div className="card divide-y">
+              {events.length === 0 && <p className="text-sm text-muted p-4">No hay eventos próximos.</p>}
+              {events.map((e) => (
+                <div key={e.id} className="flex items-center justify-between px-4 py-3">
+                  <span className="text-sm">{e.title}</span>
+                  <span className="text-xs text-muted capitalize">{formatEventTime(e.start_at)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h2 className="text-sm font-semibold text-muted mb-2">RESUMEN</h2>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="card p-3">
+                <p className="text-xl font-bold">{tasks.length}</p>
+                <p className="text-xs text-muted">Tareas pendientes</p>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+              <div className="card p-3">
+                <p className="text-xl font-bold">{events.length}</p>
+                <p className="text-xs text-muted">Próximos eventos</p>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2 className="text-sm font-semibold text-muted mb-2">AGREGAR TAREA</h2>
+            <form onSubmit={addTask} className="card p-4 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder={`Nueva tarea para ${member?.name ?? ""}…`}
+                  className="flex-1 rounded-xl border px-3 py-2 text-sm bg-transparent"
+                />
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="rounded-xl border px-3 py-2 text-sm bg-transparent"
+                />
+              </div>
+              <button className="rounded-xl bg-primary text-white px-4 py-2 text-sm font-medium">Agregar</button>
+            </form>
+          </section>
+        </>
+      )}
     </div>
   );
 }
