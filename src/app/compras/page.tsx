@@ -9,6 +9,28 @@ type Tab = "lista" | "inventario";
 const QUICK_STORES = ["Supermercado", "Feria"] as const;
 const STORE_ORDER = ["Supermercado", "Feria"];
 
+const FERIA_PRODUCTS = [
+  "Paltas",
+  "Papas",
+  "Zanahorias",
+  "Cebollas",
+  "Zapallo",
+  "Limones",
+  "Pimentones",
+  "Lechugas",
+  "Brócolis",
+  "Plátanos",
+  "Manzanas",
+  "Uvas",
+  "Frutillas",
+  "Naranjas",
+  "Mandarinas",
+  "Tomates",
+  "Cilantro",
+  "Ají verde",
+  "Ajos",
+];
+
 function groupByStore(items: ShoppingItem[]): Array<[string, ShoppingItem[]]> {
   const groups = new Map<string, ShoppingItem[]>();
   for (const item of items) {
@@ -58,6 +80,11 @@ export default function ComprasPage() {
     if (!newName.trim()) return;
     await api.post("/api/shopping", { name: newName.trim(), store: newStore });
     setNewName("");
+    loadAll();
+  }
+
+  async function quickAdd(name: string, store: string) {
+    await api.post("/api/shopping", { name, store });
     loadAll();
   }
 
@@ -134,6 +161,33 @@ export default function ComprasPage() {
               )}
             </div>
           </form>
+
+          {newStore === "Feria" && (
+            <div className="card p-3">
+              <p className="text-xs text-muted mb-2">Toca para agregar a la lista:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {FERIA_PRODUCTS.map((name) => {
+                  const alreadyPending = items.some(
+                    (i) => i.name.toLowerCase() === name.toLowerCase() && (i.store ?? "") === "Feria"
+                  );
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      disabled={alreadyPending}
+                      onClick={() => quickAdd(name, "Feria")}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                        alreadyPending ? "bg-border/40 text-muted/60" : "bg-border/60 text-foreground hover:bg-primary/10"
+                      }`}
+                    >
+                      {alreadyPending ? "✓ " : "+ "}
+                      {name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {items.length === 0 && (
             <div className="card">
