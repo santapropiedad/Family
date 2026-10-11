@@ -52,7 +52,7 @@ export async function updateMemory(
   patch: Partial<Pick<Memory, "content" | "category" | "is_active" | "expires_at">>
 ): Promise<Memory> {
   const db = await getDb();
-  const fields = Object.keys(patch) as Array<keyof typeof patch>;
+  const fields = (Object.keys(patch) as Array<keyof typeof patch>).filter((f) => patch[f] !== undefined);
   if (fields.length === 0) {
     const existing = await db.query<Memory>("SELECT * FROM memories WHERE family_id = $1 AND id = $2", [
       familyId,

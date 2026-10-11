@@ -75,7 +75,7 @@ export async function updateMember(
 ): Promise<FamilyMember> {
   await getMember(familyId, memberId);
   const db = await getDb();
-  const fields = Object.keys(patch) as Array<keyof typeof patch>;
+  const fields = (Object.keys(patch) as Array<keyof typeof patch>).filter((f) => patch[f] !== undefined);
   if (fields.length === 0) return getMember(familyId, memberId);
 
   const setClauses = fields.map((field, i) => `${field} = $${i + 3}`);

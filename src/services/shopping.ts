@@ -107,7 +107,7 @@ export async function updateShoppingItem(
 ): Promise<ShoppingItem> {
   await getShoppingItem(familyId, itemId);
   const db = await getDb();
-  const fields = Object.keys(patch) as Array<keyof typeof patch>;
+  const fields = (Object.keys(patch) as Array<keyof typeof patch>).filter((f) => patch[f] !== undefined);
   if (fields.length === 0) return getShoppingItem(familyId, itemId);
   const setClauses = fields.map((field, i) => `${field} = $${i + 3}`);
   const values = fields.map((field) => patch[field]);
@@ -194,7 +194,7 @@ export async function updateInventoryItem(
   >
 ): Promise<InventoryItem> {
   const db = await getDb();
-  const fields = Object.keys(patch) as Array<keyof typeof patch>;
+  const fields = (Object.keys(patch) as Array<keyof typeof patch>).filter((f) => patch[f] !== undefined);
   if (fields.length === 0) {
     const existing = await db.query<InventoryItem>(
       "SELECT * FROM inventory_items WHERE family_id = $1 AND id = $2",

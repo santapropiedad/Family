@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { freshDb, createTestFamily } from "./helpers";
-import { addShoppingItem, findInventoryItemByName, listShoppingItems, recordPurchase } from "@/services/shopping";
+import {
+  addShoppingItem,
+  findInventoryItemByName,
+  listShoppingItems,
+  recordPurchase,
+  updateShoppingItem,
+} from "@/services/shopping";
 import { listExpenses } from "@/services/expenses";
 import { createEvent, findConflicts } from "@/services/events";
 import { createMaintenance, completeMaintenance } from "@/services/maintenance";
@@ -38,6 +44,26 @@ describe("flujo conectado: compras, inventario y gastos", () => {
     expect(removedFromShoppingList).toBe(false);
     const expenses = await listExpenses(familyId);
     expect(expenses).toHaveLength(1);
+  });
+
+  it("editar solo el nombre de un ítem no borra su cantidad ni su prioridad (regresión)", async () => {
+    const { familyId } = await createTestFamily("edit-item");
+    const item = await addShoppingItem(familyId, { name: "Carne y pollo", quantity: 2, priority: "red" });
+
+    // Simula lo que hace la ruta PATCH: un objeto con todas las claves posibles,
+    // donde las no enviadas por el cliente quedan en `undefined`.
+    const updated = await updateShoppingItem(familyId, item.id, {
+      name: "Carne, pollo y pescado",
+      quantity: undefined,
+      unit: undefined,
+      priority: undefined,
+      assigned_to: undefined,
+      store: undefined,
+    });
+
+    expect(updated.name).toBe("Carne, pollo y pescado");
+    expect(Number(updated.quantity)).toBe(2);
+    expect(updated.priority).toBe("red");
   });
 });
 

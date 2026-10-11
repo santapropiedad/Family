@@ -80,7 +80,7 @@ export async function updateReminder(
 ): Promise<Reminder> {
   await getReminder(familyId, reminderId);
   const db = await getDb();
-  const fields = Object.keys(patch) as Array<keyof typeof patch>;
+  const fields = (Object.keys(patch) as Array<keyof typeof patch>).filter((f) => patch[f] !== undefined);
   if (fields.length === 0) return getReminder(familyId, reminderId);
   const setClauses = fields.map((field, i) => `${field} = $${i + 3}`);
   const values = fields.map((field) => patch[field]);

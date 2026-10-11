@@ -96,7 +96,7 @@ export async function updateFamilySettings(
   >
 ): Promise<Family> {
   const db = await getDb();
-  const fields = Object.keys(patch) as Array<keyof typeof patch>;
+  const fields = (Object.keys(patch) as Array<keyof typeof patch>).filter((f) => patch[f] !== undefined);
   if (fields.length === 0) return getFamily(familyId);
 
   const setClauses = fields.map((field, i) => `${field} = $${i + 2}`);

@@ -9,27 +9,113 @@ type Tab = "lista" | "inventario";
 const QUICK_STORES = ["Supermercado", "Feria"] as const;
 const STORE_ORDER = ["Supermercado", "Feria"];
 
-const FERIA_PRODUCTS = [
-  "Paltas",
-  "Papas",
-  "Zanahorias",
-  "Cebollas",
-  "Zapallo",
-  "Limones",
-  "Pimentones",
-  "Lechugas",
-  "Brócolis",
-  "Plátanos",
-  "Manzanas",
-  "Uvas",
-  "Frutillas",
-  "Naranjas",
-  "Mandarinas",
-  "Tomates",
-  "Cilantro",
-  "Ají verde",
-  "Ajos",
-];
+/** Catálogo de productos habituales por tienda, para agregar con un toque. Editable aquí mismo. */
+const STORE_CATALOG: Record<string, string[]> = {
+  Feria: [
+    "Paltas",
+    "Papas",
+    "Zanahorias",
+    "Cebollas",
+    "Zapallo",
+    "Limones",
+    "Pimentones",
+    "Lechugas",
+    "Brócolis",
+    "Plátanos",
+    "Manzanas",
+    "Uvas",
+    "Frutillas",
+    "Naranjas",
+    "Mandarinas",
+    "Tomates",
+    "Cilantro",
+    "Ají verde",
+    "Ajos",
+  ],
+  Supermercado: [
+    "Leche 5 años",
+    "Leche 3 años",
+    "Milo",
+    "Leche natural en caja",
+    "Jamón",
+    "Queso",
+    "Mantequilla",
+    "Manjar",
+    "Chamitos",
+    "Yogurt niños",
+    "Yogurt para batidos",
+    "Pan",
+    "Pan de molde",
+    "Aceite normal",
+    "Aceite de oliva",
+    "Arroz",
+    "Tallarines",
+    "Salsa de tomates",
+    "Cabellos de ángel",
+    "Sal",
+    "Azúcar",
+    "Endulzante",
+    "Shampoo",
+    "Acondicionador",
+    "Té hojas",
+    "Carne",
+    "Pollo",
+    "Salsa de ajo",
+    "Longanizas",
+    "Salchichas",
+    "Carne molida",
+    "Confort",
+    "Lavalozas",
+    "Suavizante de ropa",
+    "Bolsas chicas de basura",
+    "Bolsas grandes de basura",
+    "Queso rallado",
+    "Nova",
+    "Nova grande",
+    "Limpia pisos",
+    "Cloro normal",
+    "Cloro gel",
+    "Shampoo papá",
+    "Limpia muebles",
+    "Limpia vidrios",
+    "Fajitas",
+    "Té normal",
+    "Galletas chicas",
+    "Galletas grande",
+    "Desmanchador camisas",
+    "Vinagre",
+    "Salsa barbecue",
+    "Prietas",
+    "Hamburguesas",
+    "Salmón",
+    "Quequitos",
+    "Champiñones",
+    "Crema",
+    "Jabón líquido",
+    "Jabón en barra",
+    "Esponja para cocina",
+    "Paño amarillo cocina",
+    "Café",
+    "Ají",
+    "Mayonesa",
+    "Ketchup",
+    "Mostaza",
+    "Detergente",
+    "Lentejas",
+    "Porotos",
+    "Garbanzos",
+    "Shampoo niños",
+    "Pasta de dientes",
+    "Enjuague bucal",
+    "Servilletas",
+    "Cif",
+    "Mermelada",
+    "Colonia niños",
+    "Bandeja pollo",
+    "Chuletas",
+    "Churrascos",
+  ],
+};
 
 function groupByStore(items: ShoppingItem[]): Array<[string, ShoppingItem[]]> {
   const groups = new Map<string, ShoppingItem[]>();
@@ -60,6 +146,8 @@ export default function ComprasPage() {
   const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState<ShoppingItem | null>(null);
   const [buyAmount, setBuyAmount] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
 
   async function loadAll() {
     const [i, inv] = await Promise.all([
@@ -90,6 +178,19 @@ export default function ComprasPage() {
 
   async function removeItem(id: string) {
     await api.delete(`/api/shopping/${id}`);
+    loadAll();
+  }
+
+  function startEdit(item: ShoppingItem) {
+    setEditingId(item.id);
+    setEditName(item.name);
+  }
+
+  async function saveEdit(id: string) {
+    const name = editName.trim();
+    setEditingId(null);
+    if (!name) return;
+    await api.patch(`/api/shopping/${id}`, { name });
     loadAll();
   }
 
@@ -162,20 +263,20 @@ export default function ComprasPage() {
             </div>
           </form>
 
-          {newStore === "Feria" && (
+          {newStore && STORE_CATALOG[newStore] && (
             <div className="card p-3">
               <p className="text-xs text-muted mb-2">Toca para agregar a la lista:</p>
               <div className="flex flex-wrap gap-1.5">
-                {FERIA_PRODUCTS.map((name) => {
+                {STORE_CATALOG[newStore].map((name) => {
                   const alreadyPending = items.some(
-                    (i) => i.name.toLowerCase() === name.toLowerCase() && (i.store ?? "") === "Feria"
+                    (i) => i.name.toLowerCase() === name.toLowerCase() && (i.store ?? "") === newStore
                   );
                   return (
                     <button
                       key={name}
                       type="button"
                       disabled={alreadyPending}
-                      onClick={() => quickAdd(name, "Feria")}
+                      onClick={() => quickAdd(name, newStore)}
                       className={`px-2.5 py-1 rounded-full text-xs font-medium ${
                         alreadyPending ? "bg-border/40 text-muted/60" : "bg-border/60 text-foreground hover:bg-primary/10"
                       }`}
@@ -199,26 +300,52 @@ export default function ComprasPage() {
             <div key={store}>
               <h2 className="text-sm font-semibold text-muted mb-2">{store.toUpperCase()}</h2>
               <div className="card divide-y">
-                {storeItems.map((item) => (
-                  <div key={item.id} className="flex items-center gap-3 px-4 py-3">
-                    <span className={`priority-dot ${item.priority}`} />
-                    <div className="flex-1">
-                      <p className="text-sm">
+                {storeItems.map((item) =>
+                  editingId === item.id ? (
+                    <div key={item.id} className="flex items-center gap-2 px-4 py-2.5">
+                      <input
+                        autoFocus
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit(item.id);
+                          if (e.key === "Escape") setEditingId(null);
+                        }}
+                        className="flex-1 rounded-lg border px-2 py-1 text-sm bg-transparent"
+                      />
+                      <button
+                        onClick={() => saveEdit(item.id)}
+                        className="text-xs font-medium text-primary px-2 py-1 rounded-lg hover:bg-primary/10"
+                      >
+                        Guardar
+                      </button>
+                      <button onClick={() => setEditingId(null)} className="text-xs text-muted px-1">
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <div key={item.id} className="flex items-center gap-3 px-4 py-3">
+                      <span className={`priority-dot ${item.priority}`} />
+                      <button
+                        onClick={() => startEdit(item)}
+                        className="flex-1 text-left text-sm hover:underline decoration-dotted"
+                        title="Editar"
+                      >
                         {item.name}
                         {Number(item.quantity) !== 1 && ` (${item.quantity}${item.unit ? ` ${item.unit}` : ""})`}
-                      </p>
+                      </button>
+                      <button
+                        onClick={() => setBuying(item)}
+                        className="text-xs font-medium text-primary px-2 py-1 rounded-lg hover:bg-primary/10"
+                      >
+                        Comprado
+                      </button>
+                      <button onClick={() => removeItem(item.id)} className="text-xs text-muted px-1">
+                        ✕
+                      </button>
                     </div>
-                    <button
-                      onClick={() => setBuying(item)}
-                      className="text-xs font-medium text-primary px-2 py-1 rounded-lg hover:bg-primary/10"
-                    >
-                      Comprado
-                    </button>
-                    <button onClick={() => removeItem(item.id)} className="text-xs text-muted px-1">
-                      ✕
-                    </button>
-                  </div>
-                ))}
+                  )
+                )}
               </div>
             </div>
           ))}
