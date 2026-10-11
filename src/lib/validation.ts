@@ -68,6 +68,7 @@ export const recordPurchaseSchema = z.object({
   amount: z.number().positive().max(100_000_000),
   quantity: z.number().positive().max(100000).optional(),
   unit: z.string().trim().max(30).nullable().optional(),
+  store: z.string().trim().max(80).nullable().optional(),
   merchant: z.string().trim().max(120).nullable().optional(),
   paymentMethod: z.string().trim().max(60).nullable().optional(),
 });

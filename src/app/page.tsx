@@ -84,8 +84,9 @@ export default function HoyPage() {
         <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.max(members.length, 1)}, minmax(0, 1fr))` }}>
           {members.map((m) => {
             const memberTasks = tasks.filter((t) => t.assignees?.includes(m.id));
+            const href = m.role === "child" ? `/hijos?child=${m.id}` : `/integrante/${m.id}`;
             return (
-              <div key={m.id} className="card p-1.5 sm:p-3 text-center">
+              <Link key={m.id} href={href} className="card p-1.5 sm:p-3 text-center">
                 <div
                   className="w-7 h-7 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center text-sm sm:text-lg mb-1"
                   style={{ backgroundColor: m.color + "33" }}
@@ -96,7 +97,7 @@ export default function HoyPage() {
                 <p className="text-[9px] sm:text-[11px] text-muted truncate">
                   {memberTasks.length} tarea{memberTasks.length === 1 ? "" : "s"}
                 </p>
-              </div>
+              </Link>
             );
           })}
         </div>

@@ -93,6 +93,7 @@ export default function ComprasTienda({ store, catalog }: Props) {
     const row = rows[name];
     if (row?.itemId) {
       await api.patch(`/api/shopping/${row.itemId}`, { quantity: Number(quantity) || 1, unit });
+      setItems((prev) => prev.map((i) => (i.id === row.itemId ? { ...i, quantity, unit } : i)));
     }
   }
 
@@ -127,7 +128,7 @@ export default function ComprasTienda({ store, catalog }: Props) {
     if (!buying) return;
     const amount = Number(buyAmount.replace(/[^\d]/g, ""));
     if (!amount) return;
-    await api.post("/api/shopping/purchase", { itemName: buying.name, amount, unit: buying.unit });
+    await api.post("/api/shopping/purchase", { itemName: buying.name, amount, unit: buying.unit, store: buying.store });
     setBuying(null);
     setBuyAmount("");
     load();
@@ -143,10 +144,10 @@ export default function ComprasTienda({ store, catalog }: Props) {
       </header>
 
       <section>
-        <h2 className="text-sm font-semibold text-muted mb-2">RESUMEN — QUÉ COMPRAR</h2>
+        <h2 className="text-sm font-semibold text-muted mb-2">QUÉ FALTA COMPRAR</h2>
         {!loading && items.length === 0 && (
           <div className="card">
-            <p className="text-sm text-muted p-4">No tienes nada pendiente en {store} todavía.</p>
+            <p className="text-sm text-muted p-4">No te falta nada en {store} por ahora.</p>
           </div>
         )}
         {items.length > 0 && (
@@ -160,8 +161,9 @@ export default function ComprasTienda({ store, catalog }: Props) {
                 <button
                   onClick={() => setBuying(item)}
                   className="text-xs font-medium text-primary px-2 py-1 rounded-lg hover:bg-primary/10"
+                  title="Marcar que ya lo compraste"
                 >
-                  Comprado
+                  Ya lo compré
                 </button>
               </div>
             ))}

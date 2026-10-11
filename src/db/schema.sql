@@ -168,6 +168,8 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   UNIQUE (family_id, name)
 );
 CREATE INDEX IF NOT EXISTS idx_inventory_family ON inventory_items(family_id);
+-- Tienda de origen (Feria / Supermercado), para separar el stock de casa por tienda en la UI.
+ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS store TEXT;
 
 CREATE TABLE IF NOT EXISTS shopping_items (
   id UUID PRIMARY KEY,

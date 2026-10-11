@@ -77,6 +77,7 @@ export const CATALOG_SUPERMERCADO = [
   "Prietas",
   "Hamburguesas",
   "Salmón",
+  "Pescado",
   "Quequitos",
   "Champiñones",
   "Crema",

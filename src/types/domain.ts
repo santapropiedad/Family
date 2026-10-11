@@ -180,6 +180,7 @@ export interface InventoryItem {
   last_purchased_at: string | null;
   last_price: string | null;
   auto_suggest: boolean;
+  store: string | null;
   created_at: string;
   updated_at: string;
 }

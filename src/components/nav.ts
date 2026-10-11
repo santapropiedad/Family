@@ -14,9 +14,11 @@ export const PRIMARY_NAV: NavItem[] = [
 
 export const SECONDARY_NAV: NavItem[] = [
   { href: "/calendario", label: "Calendario", icon: "📅" },
+  { href: "/hijos", label: "Hijos", icon: "🎒" },
   { href: "/inteligencia", label: "Inteligencia", icon: "🧠" },
   { href: "/familia", label: "Familia", icon: "👨‍👩‍👧‍👦" },
-  { href: "/inventario", label: "Inventario", icon: "📦" },
+  { href: "/inventario-feria", label: "Inventario Feria", icon: "📦" },
+  { href: "/inventario-supermercado", label: "Inventario Supermercado", icon: "📦" },
 ];
 
 export const ALL_NAV: NavItem[] = [...PRIMARY_NAV, ...SECONDARY_NAV];

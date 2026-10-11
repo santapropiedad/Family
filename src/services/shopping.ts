@@ -142,7 +142,13 @@ export async function findInventoryItemByName(familyId: string, name: string): P
 export async function upsertInventoryOnPurchase(
   familyId: string,
   name: string,
-  opts: { quantityDelta?: number; unit?: string | null; price?: number | null; categoryId?: string | null }
+  opts: {
+    quantityDelta?: number;
+    unit?: string | null;
+    price?: number | null;
+    categoryId?: string | null;
+    store?: string | null;
+  }
 ): Promise<InventoryItem> {
   const db = await getDb();
   const existing = await findInventoryItemByName(familyId, name);
@@ -150,8 +156,8 @@ export async function upsertInventoryOnPurchase(
 
   if (!existing) {
     const result = await db.query<InventoryItem>(
-      `INSERT INTO inventory_items (id, family_id, name, category_id, current_quantity, unit, last_purchased_at, last_price)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      `INSERT INTO inventory_items (id, family_id, name, category_id, current_quantity, unit, last_purchased_at, last_price, store)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [
         newId(),
         familyId,
@@ -161,6 +167,7 @@ export async function upsertInventoryOnPurchase(
         opts.unit ?? null,
         today,
         opts.price ?? null,
+        opts.store ?? null,
       ]
     );
     return result.rows[0];
@@ -179,9 +186,10 @@ export async function upsertInventoryOnPurchase(
          last_purchased_at = $4,
          last_price = COALESCE($5, last_price),
          avg_purchase_frequency_days = $6,
+         store = COALESCE(store, $7),
          updated_at = now()
      WHERE family_id = $1 AND id = $2 RETURNING *`,
-    [familyId, existing.id, opts.quantityDelta ?? 1, today, opts.price ?? null, frequency]
+    [familyId, existing.id, opts.quantityDelta ?? 1, today, opts.price ?? null, frequency, opts.store ?? null]
   );
   return result.rows[0];
 }
@@ -214,6 +222,37 @@ export async function updateInventoryItem(
   return result.rows[0];
 }
 
+/**
+ * Crea o actualiza directamente el stock de un producto por nombre (sin que medie una compra).
+ * Usado por las pantallas de Inventario para poder controlar cuánto queda de CUALQUIER
+ * producto del catálogo, aunque nunca se haya registrado una compra de él.
+ */
+export async function setInventoryStock(
+  familyId: string,
+  name: string,
+  opts: { quantity: number; unit?: string | null; store?: string | null; categoryId?: string | null }
+): Promise<InventoryItem> {
+  const db = await getDb();
+  const existing = await findInventoryItemByName(familyId, name);
+
+  if (!existing) {
+    const result = await db.query<InventoryItem>(
+      `INSERT INTO inventory_items (id, family_id, name, category_id, current_quantity, unit, store)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [newId(), familyId, name.trim(), opts.categoryId ?? null, opts.quantity, opts.unit ?? null, opts.store ?? null]
+    );
+    return result.rows[0];
+  }
+
+  const result = await db.query<InventoryItem>(
+    `UPDATE inventory_items
+     SET current_quantity = $3, unit = COALESCE($4, unit), store = COALESCE(store, $5), updated_at = now()
+     WHERE family_id = $1 AND id = $2 RETURNING *`,
+    [familyId, existing.id, opts.quantity, opts.unit ?? null, opts.store ?? null]
+  );
+  return result.rows[0];
+}
+
 // --- Flujo conectado: "Compré leche por $8.990" ---
 
 export interface RecordPurchaseInput {
@@ -221,6 +260,7 @@ export interface RecordPurchaseInput {
   amount: number;
   quantity?: number;
   unit?: string | null;
+  store?: string | null;
   familyMemberId?: string | null;
   merchant?: string | null;
   paymentMethod?: string | null;
@@ -253,6 +293,7 @@ export async function recordPurchase(familyId: string, input: RecordPurchaseInpu
     unit: input.unit ?? pendingItem?.unit ?? null,
     price: input.amount,
     categoryId: pendingItem?.category_id ?? category?.id ?? null,
+    store: input.store ?? pendingItem?.store ?? null,
   });
 
   let removedFromShoppingList = false;
