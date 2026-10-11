@@ -6,116 +6,7 @@ import type { InventoryItem, ShoppingItem } from "@/types/domain";
 
 type Tab = "lista" | "inventario";
 
-const QUICK_STORES = ["Supermercado", "Feria"] as const;
 const STORE_ORDER = ["Supermercado", "Feria"];
-
-/** Catálogo de productos habituales por tienda, para agregar con un toque. Editable aquí mismo. */
-const STORE_CATALOG: Record<string, string[]> = {
-  Feria: [
-    "Paltas",
-    "Papas",
-    "Zanahorias",
-    "Cebollas",
-    "Zapallo",
-    "Limones",
-    "Pimentones",
-    "Lechugas",
-    "Brócolis",
-    "Plátanos",
-    "Manzanas",
-    "Uvas",
-    "Frutillas",
-    "Naranjas",
-    "Mandarinas",
-    "Tomates",
-    "Cilantro",
-    "Ají verde",
-    "Ajos",
-  ],
-  Supermercado: [
-    "Leche 5 años",
-    "Leche 3 años",
-    "Milo",
-    "Leche natural en caja",
-    "Jamón",
-    "Queso",
-    "Mantequilla",
-    "Manjar",
-    "Chamitos",
-    "Yogurt niños",
-    "Yogurt para batidos",
-    "Pan",
-    "Pan de molde",
-    "Aceite normal",
-    "Aceite de oliva",
-    "Arroz",
-    "Tallarines",
-    "Salsa de tomates",
-    "Cabellos de ángel",
-    "Sal",
-    "Azúcar",
-    "Endulzante",
-    "Shampoo",
-    "Acondicionador",
-    "Té hojas",
-    "Carne",
-    "Pollo",
-    "Salsa de ajo",
-    "Longanizas",
-    "Salchichas",
-    "Carne molida",
-    "Confort",
-    "Lavalozas",
-    "Suavizante de ropa",
-    "Bolsas chicas de basura",
-    "Bolsas grandes de basura",
-    "Queso rallado",
-    "Nova",
-    "Nova grande",
-    "Limpia pisos",
-    "Cloro normal",
-    "Cloro gel",
-    "Shampoo papá",
-    "Limpia muebles",
-    "Limpia vidrios",
-    "Fajitas",
-    "Té normal",
-    "Galletas chicas",
-    "Galletas grande",
-    "Desmanchador camisas",
-    "Vinagre",
-    "Salsa barbecue",
-    "Prietas",
-    "Hamburguesas",
-    "Salmón",
-    "Quequitos",
-    "Champiñones",
-    "Crema",
-    "Jabón líquido",
-    "Jabón en barra",
-    "Esponja para cocina",
-    "Paño amarillo cocina",
-    "Café",
-    "Ají",
-    "Mayonesa",
-    "Ketchup",
-    "Mostaza",
-    "Detergente",
-    "Lentejas",
-    "Porotos",
-    "Garbanzos",
-    "Shampoo niños",
-    "Pasta de dientes",
-    "Enjuague bucal",
-    "Servilletas",
-    "Cif",
-    "Mermelada",
-    "Colonia niños",
-    "Bandeja pollo",
-    "Chuletas",
-    "Churrascos",
-  ],
-};
 
 function groupByStore(items: ShoppingItem[]): Array<[string, ShoppingItem[]]> {
   const groups = new Map<string, ShoppingItem[]>();
@@ -171,11 +62,6 @@ export default function ComprasPage() {
     loadAll();
   }
 
-  async function quickAdd(name: string, store: string) {
-    await api.post("/api/shopping", { name, store });
-    loadAll();
-  }
-
   async function removeItem(id: string) {
     await api.delete(`/api/shopping/${id}`);
     loadAll();
@@ -208,14 +94,16 @@ export default function ComprasPage() {
   return (
     <div className="space-y-5">
       <header>
-        <h1 className="text-2xl font-bold">Compras Inteligentes</h1>
-        <p className="text-sm text-muted">Lista conectada con tu inventario y tus gastos.</p>
+        <h1 className="text-2xl font-bold">Compras</h1>
+        <p className="text-sm text-muted">
+          Lo que hay que comprar. Para marcar productos de Feria o Supermercado, ve a sus pantallas de inventario.
+        </p>
       </header>
 
       <div className="flex gap-2">
         {([
           ["lista", "Lista"],
-          ["inventario", "Inventario"],
+          ["inventario", "Stock en casa"],
         ] as const).map(([key, label]) => (
           <button
             key={key}
@@ -238,14 +126,14 @@ export default function ComprasPage() {
               <input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="Agregar producto…"
+                placeholder="Agregar otro producto…"
                 className="flex-1 rounded-xl border px-3 py-2 text-sm bg-transparent"
               />
               <button className="rounded-xl bg-primary text-white px-4 text-sm font-medium">Agregar</button>
             </div>
             <div className="flex items-center gap-1.5 text-xs">
               <span className="text-muted">Tienda:</span>
-              {QUICK_STORES.map((store) => (
+              {["Supermercado", "Feria"].map((store) => (
                 <button
                   key={store}
                   type="button"
@@ -257,38 +145,8 @@ export default function ComprasPage() {
                   {store}
                 </button>
               ))}
-              {newStore && !QUICK_STORES.includes(newStore as (typeof QUICK_STORES)[number]) && (
-                <span className="px-2.5 py-1 rounded-full bg-primary text-white font-medium">{newStore}</span>
-              )}
             </div>
           </form>
-
-          {newStore && STORE_CATALOG[newStore] && (
-            <div className="card p-3">
-              <p className="text-xs text-muted mb-2">Toca para agregar a la lista:</p>
-              <div className="flex flex-wrap gap-1.5">
-                {STORE_CATALOG[newStore].map((name) => {
-                  const alreadyPending = items.some(
-                    (i) => i.name.toLowerCase() === name.toLowerCase() && (i.store ?? "") === newStore
-                  );
-                  return (
-                    <button
-                      key={name}
-                      type="button"
-                      disabled={alreadyPending}
-                      onClick={() => quickAdd(name, newStore)}
-                      className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                        alreadyPending ? "bg-border/40 text-muted/60" : "bg-border/60 text-foreground hover:bg-primary/10"
-                      }`}
-                    >
-                      {alreadyPending ? "✓ " : "+ "}
-                      {name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {items.length === 0 && (
             <div className="card">
