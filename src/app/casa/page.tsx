@@ -6,10 +6,13 @@ import { useSession } from "@/components/SessionProvider";
 import type { Task } from "@/types/domain";
 
 export default function CasaPage() {
-  const { members } = useSession();
+  const { session, members } = useSession();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTitle, setNewTitle] = useState("");
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const canAssignOthers = session?.role === "admin" || session?.role === "adult";
 
   async function loadAll() {
     const t = await api.get<{ tasks: Task[] }>("/api/tasks");
@@ -21,11 +24,19 @@ export default function CasaPage() {
     loadAll();
   }, []);
 
+  function toggleAssignee(id: string) {
+    setAssigneeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
   async function addTask(e: React.FormEvent) {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    await api.post("/api/tasks", { title: newTitle.trim() });
+    await api.post("/api/tasks", {
+      title: newTitle.trim(),
+      assigneeIds: assigneeIds.length > 0 ? assigneeIds : undefined,
+    });
     setNewTitle("");
+    setAssigneeIds([]);
     loadAll();
   }
 
@@ -47,14 +58,32 @@ export default function CasaPage() {
 
       {!loading && (
         <div className="space-y-3">
-          <form onSubmit={addTask} className="flex gap-2">
-            <input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="Nueva tarea…"
-              className="flex-1 rounded-xl border px-3 py-2 text-sm bg-transparent"
-            />
-            <button className="rounded-xl bg-primary text-white px-4 text-sm font-medium">Agregar</button>
+          <form onSubmit={addTask} className="card p-3 space-y-2">
+            <div className="flex gap-2">
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Nueva tarea…"
+                className="flex-1 rounded-xl border px-3 py-2 text-sm bg-transparent"
+              />
+              <button className="rounded-xl bg-primary text-white px-4 text-sm font-medium">Agregar</button>
+            </div>
+            {canAssignOthers && (
+              <div className="flex gap-1.5 flex-wrap">
+                {members.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => toggleAssignee(m.id)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                      assigneeIds.includes(m.id) ? "bg-primary text-white" : "bg-border/60 text-muted"
+                    }`}
+                  >
+                    {m.avatar_emoji ?? "🙂"} {m.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </form>
           <div className="card divide-y">
             {tasks.length === 0 && <p className="text-sm text-muted p-4">No hay tareas todavía.</p>}
