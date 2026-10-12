@@ -66,20 +66,25 @@ export async function handleWithRules(
     }
   }
 
-  // "Agrega leche" / "agrega tres kilos de arroz" / "agrega leche a las compras"
+  // "Agrega leche" / "agrega tres kilos de arroz" / "agrega leche a las compras" /
+  // "agrega leche a la lista del supermercado" / "agrega pan a la feria"
   if (/^agrega(r)?\b/.test(lower)) {
-    const rest = lower.replace(/^agrega(r)?\s+/, "").replace(/\s+a\s+(la\s+)?(lista|las?\s+compras)$/, "");
+    const withoutVerb = lower.replace(/^agrega(r)?\s+/, "");
+    const store = /\bferia\b/.test(withoutVerb) ? "Feria" : /\bsupermercado\b/.test(withoutVerb) ? "Supermercado" : null;
+    // Corta cualquier remate tipo "a la lista", "a las compras", "a la feria", "al supermercado"
+    // (con lo que venga después, ej. "del supermercado") para no incluirlo en el nombre del producto.
+    const rest = withoutVerb.replace(/\s+a(l)?\s+(la\s+)?(lista|las?\s+compras|feria|supermercado).*$/, "");
     const parsed = parseQuantityItem(rest);
     const action = await executeTool(
       ctx,
       "add_shopping_item",
       parsed
-        ? { name: parsed.name, quantity: parsed.quantity, unit: parsed.unit }
-        : { name: rest.trim() },
+        ? { name: parsed.name, quantity: parsed.quantity, unit: parsed.unit, store }
+        : { name: rest.trim(), store },
       conversationId
     );
     const itemName = parsed ? parsed.name : rest.trim();
-    return { reply: `Agregué "${itemName}" a la lista de compras.`, action };
+    return { reply: `Agregué "${itemName}" a la lista de compras${store ? ` de ${store}` : ""}.`, action };
   }
 
   // "Recuérdame comprar pan mañana" / "recuérdame pagar internet todos los meses"

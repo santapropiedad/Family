@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api-client";
 import { useSession } from "@/components/SessionProvider";
 import type { FamilyEvent, Task } from "@/types/domain";
@@ -28,29 +29,37 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [events, setEvents] = useState<FamilyEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
 
   async function load() {
     setLoading(true);
-    const from = new Date();
-    const to = new Date();
-    to.setDate(to.getDate() + 7);
-    const [tasksRes, eventsRes] = await Promise.all([
-      api.get<{ tasks: Task[] }>(`/api/tasks?assignedTo=${memberId}&status=pending`),
-      api.get<{ events: FamilyEvent[] }>(
-        `/api/events?memberId=${memberId}&from=${from.toISOString()}&to=${to.toISOString()}`
-      ),
-    ]);
-    setTasks(tasksRes.tasks);
-    setEvents(eventsRes.events);
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const from = new Date();
+      const to = new Date();
+      to.setDate(to.getDate() + 7);
+      const [tasksRes, eventsRes] = await Promise.all([
+        api.get<{ tasks: Task[] }>(`/api/tasks?assignedTo=${memberId}&status=pending`),
+        api.get<{ events: FamilyEvent[] }>(
+          `/api/events?memberId=${memberId}&from=${from.toISOString()}&to=${to.toISOString()}`
+        ),
+      ]);
+      setTasks(tasksRes.tasks);
+      setEvents(eventsRes.events);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "No se pudo cargar la información.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
-    if (memberId) load();
+    if (memberId && member) load();
+    else setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memberId]);
+  }, [memberId, member]);
 
   async function addTask(e: React.FormEvent) {
     e.preventDefault();
@@ -68,6 +77,17 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
 
   const today = new Date().toISOString().slice(0, 10);
   const overdueOrUrgent = tasks.filter((t) => t.priority === "red" || (t.due_date && t.due_date < today));
+
+  if (!member) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-muted">No encontramos a este integrante de la familia.</p>
+        <Link href="/" className="text-sm text-primary font-medium">
+          ← Volver a Hoy
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -90,6 +110,13 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
 
       {loading ? (
         <p className="text-sm text-muted">Cargando…</p>
+      ) : loadError ? (
+        <div className="card p-4 space-y-2">
+          <p className="text-sm text-priority-red">{loadError}</p>
+          <button onClick={() => load()} className="text-sm text-primary font-medium">
+            Reintentar
+          </button>
+        </div>
       ) : (
         <>
           <section>

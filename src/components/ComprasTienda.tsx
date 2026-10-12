@@ -36,7 +36,10 @@ export default function ComprasTienda({ store, catalog }: Props) {
 
   async function load() {
     const res = await api.get<{ items: ShoppingItem[] }>(`/api/shopping?status=pending`);
-    const storeItems = res.items.filter((i) => (i.store ?? "") === store);
+    // Un ítem sin tienda asignada (ej. agregado por el asistente de IA, que no sabe de la
+    // separación por tienda) se muestra en ambas listas hasta que alguien lo clasifique,
+    // en vez de quedar invisible para siempre.
+    const storeItems = res.items.filter((i) => !i.store || i.store === store);
     setItems(storeItems);
 
     const byName = new Map(storeItems.map((i) => [i.name.toLowerCase(), i]));
