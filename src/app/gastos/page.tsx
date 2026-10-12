@@ -1,21 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 import type { Expense, ExpenseCategory } from "@/types/domain";
-
-function readFileAsBase64(file: File): Promise<{ base64: string; mimeType: string }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("No se pudo leer la imagen."));
-    reader.onload = () => {
-      const result = reader.result as string;
-      const base64 = result.split(",")[1] ?? "";
-      resolve({ base64, mimeType: file.type || "image/jpeg" });
-    };
-    reader.readAsDataURL(file);
-  });
-}
 
 interface SummaryResponse {
   total: number;
@@ -42,9 +29,6 @@ export default function GastosPage() {
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [loading, setLoading] = useState(true);
-  const [scanning, setScanning] = useState(false);
-  const [scanMessage, setScanMessage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function loadAll() {
     const { from, to } = monthRange();
@@ -76,31 +60,6 @@ export default function GastosPage() {
     setDescription("");
     setCategoryId("");
     loadAll();
-  }
-
-  async function scanReceipt(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setScanning(true);
-    setScanMessage(null);
-    try {
-      const { base64, mimeType } = await readFileAsBase64(file);
-      const res = await api.post<{ expense: Expense }>("/api/expenses/scan-receipt", {
-        imageBase64: base64,
-        mimeType,
-      });
-      setScanMessage(
-        `Boleta registrada: ${money(Number(res.expense.amount))}${
-          res.expense.merchant ? ` en ${res.expense.merchant}` : ""
-        }.`
-      );
-      loadAll();
-    } catch (err) {
-      setScanMessage(err instanceof Error ? err.message : "No se pudo leer la boleta.");
-    } finally {
-      setScanning(false);
-    }
   }
 
   return (
@@ -136,26 +95,6 @@ export default function GastosPage() {
           )}
         </div>
       )}
-
-      <div className="space-y-1.5">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={scanReceipt}
-        />
-        <button
-          type="button"
-          disabled={scanning}
-          onClick={() => fileInputRef.current?.click()}
-          className="w-full rounded-xl border border-dashed px-4 py-2.5 text-sm font-medium text-center disabled:opacity-60"
-        >
-          {scanning ? "Leyendo boleta…" : "📷 Escanear boleta y registrar gasto"}
-        </button>
-        {scanMessage && <p className="text-xs text-muted text-center">{scanMessage}</p>}
-      </div>
 
       <form onSubmit={addExpense} className="card p-4 space-y-2">
         <div className="flex gap-2">

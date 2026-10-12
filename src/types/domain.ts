@@ -38,7 +38,7 @@ export interface AppUser {
 
 export type Priority = "red" | "yellow" | "green";
 export type Recurrence = "none" | "daily" | "weekly" | "monthly";
-export type Source = "manual" | "ai" | "receipt_scan";
+export type Source = "manual" | "ai";
 
 export interface Task {
   id: string;

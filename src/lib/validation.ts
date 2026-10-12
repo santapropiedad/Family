@@ -85,11 +85,6 @@ export const createExpenseSchema = z.object({
   isRecurring: z.boolean().optional(),
 });
 
-export const scanReceiptSchema = z.object({
-  imageBase64: z.string().trim().min(1).max(15_000_000),
-  mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "image/heic"]),
-});
-
 export const createMaintenanceSchema = z.object({
   name: z.string().trim().min(1).max(120),
   location: z.string().trim().max(120).nullable().optional(),
