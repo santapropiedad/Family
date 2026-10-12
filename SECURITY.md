@@ -1,4 +1,4 @@
-# Seguridad — Familia+
+# Seguridad — Family
 
 ## Autenticación
 

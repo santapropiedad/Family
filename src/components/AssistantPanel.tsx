@@ -44,7 +44,7 @@ export default function AssistantPanel({
     {
       id: "welcome",
       role: "assistant",
-      text: "Hola, soy Familia+ IA. Puedes preguntarme qué hay pendiente, pedirme que agregue una compra, registre un gasto o cree un recordatorio.",
+      text: "Hola, soy Family IA. Puedes preguntarme qué hay pendiente, pedirme que agregue una compra, registre un gasto o cree un recordatorio.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -136,7 +136,7 @@ export default function AssistantPanel({
       <div className="card w-full md:max-w-lg md:mx-4 h-[85vh] md:h-[70vh] flex flex-col rounded-t-3xl md:rounded-3xl overflow-hidden">
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div>
-            <p className="font-semibold">🎙️ Familia+ IA</p>
+            <p className="font-semibold">🎙️ Family IA</p>
             <p className="text-xs text-muted">
               {handsFree ? "Di \"Hey Familia\" para hablarme sin tocar nada" : "Pregúntame o pídeme algo"}
             </p>

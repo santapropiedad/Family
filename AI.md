@@ -1,4 +1,4 @@
-# Asistente de IA — Familia+
+# Asistente de IA — Family
 
 ## Dos motores, una sola interfaz
 

@@ -1,10 +1,10 @@
-# Familia+
+# Family
 
-Familia+ es un asistente familiar inteligente con voz e IA que centraliza en una sola aplicación:
+Family es un asistente familiar inteligente con voz e IA que centraliza en una sola aplicación:
 tareas del hogar, mantenciones, cuentas, compras e inventario, gastos, calendario, recordatorios y
 un asistente conversacional que puede consultar y modificar todo lo anterior.
 
-> La idea central: **"Familia+ sabe qué está pasando en la familia y ayuda a decidir qué hacer."**
+> La idea central: **"Family sabe qué está pasando en la familia y ayuda a decidir qué hacer."**
 
 ## Qué incluye
 
@@ -15,7 +15,7 @@ un asistente conversacional que puede consultar y modificar todo lo anterior.
 - **Calendario**: eventos familiares con asignación a integrantes y detección de conflictos de horario.
 - **Recordatorios**: con fecha, hora y recurrencia; conectables a tareas, eventos, cuentas o mantenciones.
 - **Inteligencia**: motor proactivo que detecta cuentas por vencer, compras habituales, tareas atrasadas, conflictos de calendario y gasto anormal — solo informa, nunca ejecuta nada por sí sola.
-- **FAMILIA+ IA**: asistente de texto y voz con herramientas controladas (crear/consultar/editar) y tres niveles de confirmación (automático, con confirmación, siempre confirmar).
+- **FAMILY IA**: asistente de texto y voz con herramientas controladas (crear/consultar/editar) y tres niveles de confirmación (automático, con confirmación, siempre confirmar).
 - **Memoria**: datos permanentes y temporales que la IA puede usar, editables y borrables por la familia.
 - **Seguridad**: roles (administrador / adulto / niño), aislamiento estricto por familia, y registro de auditoría de toda acción de la IA.
 
@@ -106,7 +106,7 @@ DATABASE_URL=postgresql://usuario:password@host:5432/basededatos
 
 ## Configurar la IA (Claude)
 
-Sin `ANTHROPIC_API_KEY`, Familia+ funciona con un motor de reglas local que entiende los comandos
+Sin `ANTHROPIC_API_KEY`, Family funciona con un motor de reglas local que entiende los comandos
 más comunes (agregar compras, registrar gastos, crear recordatorios/tareas, consultar lo
 pendiente). Para conversación libre y comprensión de lenguaje natural abierto:
 

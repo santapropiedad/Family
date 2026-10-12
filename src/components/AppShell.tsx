@@ -29,7 +29,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted text-sm">
-        Cargando Familia+…
+        Cargando Family…
       </div>
     );
   }

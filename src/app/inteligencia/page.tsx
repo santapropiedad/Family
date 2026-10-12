@@ -28,7 +28,7 @@ export default function InteligenciaPage() {
     <div className="space-y-5">
       <header>
         <h1 className="text-2xl font-bold">🧠 Inteligencia</h1>
-        <p className="text-sm text-muted">Lo que Familia+ detectó automáticamente, sin ejecutar nada por sí sola.</p>
+        <p className="text-sm text-muted">Lo que Family detectó automáticamente, sin ejecutar nada por sí sola.</p>
       </header>
 
       {loading && <p className="text-sm text-muted">Analizando tu familia…</p>}

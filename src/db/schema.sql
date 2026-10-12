@@ -1,4 +1,4 @@
--- FAMILIA+ — esquema relacional normalizado
+-- FAMILY — esquema relacional normalizado
 -- IDs son UUID generados en la aplicación (uuidv4), no en la base de datos,
 -- para mantener el mismo esquema funcionando igual en PGlite (desarrollo) y Postgres (producción).
 

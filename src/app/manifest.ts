@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Familia+",
-    short_name: "Familia+",
+    name: "Family",
+    short_name: "Family",
     description: "El asistente inteligente que ayuda a tu familia a saber qué hacer hoy.",
     start_url: "/",
     display: "standalone",

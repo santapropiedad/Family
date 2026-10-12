@@ -21,7 +21,7 @@ self.addEventListener("fetch", () => {
 // Muestra el aviso push aunque la app esté cerrada. El payload lo arma
 // src/services/push.ts: { title, body, tag }.
 self.addEventListener("push", (event) => {
-  let data = { title: "Familia+", body: "Tienes un aviso nuevo." };
+  let data = { title: "Family", body: "Tienes un aviso nuevo." };
   try {
     if (event.data) data = { ...data, ...event.data.json() };
   } catch {

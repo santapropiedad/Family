@@ -32,7 +32,7 @@ export default function LoginPage() {
   return (
     <div className="w-full max-w-sm space-y-6">
       <div className="text-center space-y-1">
-        <p className="text-2xl font-bold text-primary">Familia+</p>
+        <p className="text-2xl font-bold text-primary">Family</p>
         <p className="text-sm text-muted">Tu familia, organizada en un solo lugar.</p>
       </div>
 

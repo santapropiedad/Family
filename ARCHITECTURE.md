@@ -1,4 +1,4 @@
-# Arquitectura — Familia+
+# Arquitectura — Family
 
 ## Visión general
 
@@ -74,7 +74,7 @@ como contenido estático.
 - `SessionProvider` (contexto de React) carga la sesión una vez y la comparte con toda la app.
 - Navegación: `Sidebar` (escritorio, los 7 módulos) y `BottomNav` (móvil, los 4 más usados + "Más").
 - El asistente (`AssistantButton` + `AssistantPanel`) es un overlay flotante disponible en toda la
-  app autenticada, para que "hablar con Familia+" esté siempre a una acción de distancia.
+  app autenticada, para que "hablar con Family" esté siempre a una acción de distancia.
 
 ## Despliegue
 

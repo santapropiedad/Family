@@ -1,4 +1,4 @@
-# Base de datos — Familia+
+# Base de datos — Family
 
 Esquema completo en [`src/db/schema.sql`](src/db/schema.sql), aplicado con `npm run db:migrate`.
 Funciona igual en PGlite (desarrollo/tests) y en un Postgres real (producción) — ver

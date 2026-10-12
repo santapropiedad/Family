@@ -339,7 +339,7 @@ export default function FamiliaPage() {
       )}
 
       <section>
-        <h2 className="text-sm font-semibold text-muted mb-2">MEMORIA DE FAMILIA+</h2>
+        <h2 className="text-sm font-semibold text-muted mb-2">MEMORIA DE FAMILY</h2>
         <div className="card divide-y">
           {memories.length === 0 && <p className="text-sm text-muted p-4">Todavía no hay memorias guardadas.</p>}
           {memories.map((m) => (

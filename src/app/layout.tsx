@@ -15,10 +15,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Familia+",
+  title: "Family",
   description: "El asistente inteligente que ayuda a tu familia a saber qué hacer hoy.",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "Familia+" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Family" },
 };
 
 export const viewport: Viewport = {

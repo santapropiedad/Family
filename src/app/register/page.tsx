@@ -35,7 +35,7 @@ export default function RegisterPage() {
     <div className="w-full max-w-sm space-y-6">
       <div className="text-center space-y-1">
         <p className="text-2xl font-bold text-primary">Crea tu familia</p>
-        <p className="text-sm text-muted">Serás el administrador de Familia+.</p>
+        <p className="text-sm text-muted">Serás el administrador de Family.</p>
       </div>
 
       <form onSubmit={onSubmit} className="card p-5 space-y-3">

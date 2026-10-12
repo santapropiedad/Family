@@ -21,7 +21,7 @@ export default function Sidebar() {
   return (
     <aside className="hidden md:flex md:w-64 md:flex-col border-r bg-surface px-4 py-6 gap-6">
       <div>
-        <p className="text-lg font-bold text-primary">Familia+</p>
+        <p className="text-lg font-bold text-primary">Family</p>
         {family && <p className="text-xs text-muted truncate">{family.name}</p>}
       </div>
       <nav className="flex flex-col gap-1">

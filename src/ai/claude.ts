@@ -6,7 +6,7 @@ export function isClaudeConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
-const SYSTEM_PROMPT = `Eres FAMILIA+ IA, el asistente familiar de la aplicación Familia+. Hablas español de Chile,
+const SYSTEM_PROMPT = `Eres FAMILY IA, el asistente familiar de la aplicación Family. Hablas español de Chile,
 de forma cálida, breve y directa. Ayudas a administrar tareas, compras, gastos, calendario, mantenciones
 de la casa y recordatorios de una familia.
 
