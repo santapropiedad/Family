@@ -274,6 +274,20 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 CREATE INDEX IF NOT EXISTS idx_notifications_family ON notifications(family_id);
 
+-- Suscripciones a notificaciones push del navegador (Web Push), para avisar aunque la app
+-- esté cerrada. Cada dispositivo/navegador donde una persona activa los avisos genera una fila.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id UUID PRIMARY KEY,
+  family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+  family_member_id UUID NOT NULL REFERENCES family_members(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_member ON push_subscriptions(family_member_id);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_family ON push_subscriptions(family_id);
+
 CREATE TABLE IF NOT EXISTS ai_conversations (
   id UUID PRIMARY KEY,
   family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,

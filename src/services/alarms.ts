@@ -1,5 +1,7 @@
+import { getDb } from "@/db/client";
 import { listTasks } from "@/services/tasks";
 import { createNotification } from "@/services/notifications";
+import { sendPushForNotification } from "@/services/push";
 import { alarmPhaseFor, combineDueAt } from "@/lib/taskTime";
 import type { Notification } from "@/types/domain";
 
@@ -44,4 +46,40 @@ export async function checkTaskAlarms(familyId: string, now: Date = new Date()):
   }
 
   return created;
+}
+
+/** IDs de familias con al menos una tarea pendiente que tiene fecha Y hora de vencimiento. */
+export async function listFamilyIdsWithTimedPendingTasks(): Promise<string[]> {
+  const db = await getDb();
+  const result = await db.query<{ family_id: string }>(
+    `SELECT DISTINCT family_id FROM tasks WHERE status = 'pending' AND due_date IS NOT NULL AND due_time IS NOT NULL`
+  );
+  return result.rows.map((r) => r.family_id);
+}
+
+/**
+ * Igual que `checkTaskAlarms`, pero además envía un push (Web Push) por cada aviso nuevo —
+ * para cuando nadie tiene la app abierta para hacer polling. Pensado para ser llamado desde
+ * un cron externo (ver /api/cron/check-alarms), no desde el polling del cliente (ese usa
+ * `checkTaskAlarms` directo, para no duplicar el aviso push + el toast en pantalla).
+ */
+export async function checkAndPushTaskAlarms(familyId: string, now: Date = new Date()): Promise<Notification[]> {
+  const created = await checkTaskAlarms(familyId, now);
+  await Promise.all(
+    created.map((n) =>
+      sendPushForNotification(familyId, n.family_member_id, { title: n.title, body: n.body, tag: n.type })
+    )
+  );
+  return created;
+}
+
+/** Revisa y avisa (con push) las alarmas de TODAS las familias con tareas pendientes a tiempo. */
+export async function checkAllFamiliesTaskAlarms(now: Date = new Date()): Promise<number> {
+  const familyIds = await listFamilyIdsWithTimedPendingTasks();
+  let total = 0;
+  for (const familyId of familyIds) {
+    const created = await checkAndPushTaskAlarms(familyId, now);
+    total += created.length;
+  }
+  return total;
 }

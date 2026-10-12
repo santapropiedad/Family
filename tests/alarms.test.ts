@@ -1,8 +1,14 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { freshDb, createTestFamily } from "./helpers";
-import { checkTaskAlarms } from "@/services/alarms";
+import {
+  checkTaskAlarms,
+  checkAndPushTaskAlarms,
+  checkAllFamiliesTaskAlarms,
+  listFamilyIdsWithTimedPendingTasks,
+} from "@/services/alarms";
 import { createTask, completeTask } from "@/services/tasks";
 import { listNotifications } from "@/services/notifications";
+import { isPushConfigured } from "@/services/push";
 
 beforeEach(freshDb);
 
@@ -102,5 +108,52 @@ describe("sistema de avisos de tareas", () => {
     const created = await checkTaskAlarms(familyId, new Date(2026, 0, 15, 11, 55, 0));
     expect(created).toHaveLength(1);
     expect(created[0].family_member_id).toBeNull();
+  });
+});
+
+describe("avisos push para cuando la app está cerrada (cron)", () => {
+  it("sin VAPID configurado, el entorno de pruebas no intenta enviar push de verdad", () => {
+    expect(isPushConfigured()).toBe(false);
+  });
+
+  it("checkAndPushTaskAlarms crea los mismos avisos que checkTaskAlarms (push deshabilitado en pruebas)", async () => {
+    const { familyId, adultId } = await createTestFamily("alarm-push");
+    await createTask(familyId, {
+      title: "Sacar las galletas del horno",
+      dueDate: "2026-01-15",
+      dueTime: "12:00",
+      assigneeIds: [adultId],
+    });
+
+    const created = await checkAndPushTaskAlarms(familyId, new Date(2026, 0, 15, 11, 50, 0));
+    expect(created).toHaveLength(1);
+    expect(created[0].type).toBe("task_due_soon");
+  });
+
+  it("lista solo familias con tareas pendientes que tienen fecha Y hora", async () => {
+    const { familyId: conHora } = await createTestFamily("timed-yes");
+    await createTask(conHora, { title: "Con hora", dueDate: "2026-01-15", dueTime: "12:00" });
+
+    const { familyId: sinHora } = await createTestFamily("timed-no");
+    await createTask(sinHora, { title: "Sin hora", dueDate: "2026-01-15" });
+
+    const ids = await listFamilyIdsWithTimedPendingTasks();
+    expect(ids).toContain(conHora);
+    expect(ids).not.toContain(sinHora);
+  });
+
+  it("checkAllFamiliesTaskAlarms revisa varias familias en una sola pasada", async () => {
+    const { familyId: f1, adultId: a1 } = await createTestFamily("cron-f1");
+    await createTask(f1, { title: "Tarea familia 1", dueDate: "2026-01-15", dueTime: "12:00", assigneeIds: [a1] });
+
+    const { familyId: f2, adultId: a2 } = await createTestFamily("cron-f2");
+    await createTask(f2, { title: "Tarea familia 2", dueDate: "2026-01-15", dueTime: "12:05", assigneeIds: [a2] });
+
+    const total = await checkAllFamiliesTaskAlarms(new Date(2026, 0, 15, 11, 55, 0));
+    expect(total).toBe(2);
+
+    // Repetir en el mismo instante no debe volver a contar (dedup de createNotification).
+    const totalOtraVez = await checkAllFamiliesTaskAlarms(new Date(2026, 0, 15, 11, 56, 0));
+    expect(totalOtraVez).toBe(0);
   });
 });

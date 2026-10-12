@@ -12,6 +12,18 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
+export const pushSubscriptionSchema = z.object({
+  endpoint: z.string().trim().url().max(2000),
+  keys: z.object({
+    p256dh: z.string().trim().min(1).max(400),
+    auth: z.string().trim().min(1).max(400),
+  }),
+});
+
+export const unsubscribePushSchema = z.object({
+  endpoint: z.string().trim().url().max(2000),
+});
+
 export const updateCredentialsSchema = z
   .object({
     currentPassword: z.string().min(1).max(200),

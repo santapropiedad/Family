@@ -247,3 +247,13 @@ export interface Notification {
   read_at: string | null;
   created_at: string;
 }
+
+export interface PushSubscriptionRow {
+  id: string;
+  family_id: string;
+  family_member_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  created_at: string;
+}

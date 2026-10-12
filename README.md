@@ -125,6 +125,46 @@ escritorio y Android; Safari/iOS tiene soporte parcial. Si el navegador no lo so
 avisa y permite escribir en texto, que funciona siempre. Las respuestas se leen en voz alta por
 defecto (se puede silenciar con el ícono 🔊/🔇).
 
+## Avisos con la app cerrada (gratis, sin Outlook ni correo)
+
+El sistema de alarmas de tareas (15 min antes de vencer, 10 min después si sigue sin
+completarse) funciona de dos formas:
+
+1. **Con la app abierta en algún dispositivo**: un chequeo cada 60 s desde el navegador
+   (`/api/notifications/scan`) — ya funciona hoy, sin configuración extra.
+2. **Con la app cerrada**: un *cron* externo gratuito llama a `/api/cron/check-alarms` cada
+   1-5 minutos, y el servidor envía el aviso como **notificación push del propio navegador**
+   (protocolo Web Push — gratis, sin Outlook, sin SMS, sin servicio de terceros de pago; usa la
+   infraestructura de push de Chrome/Firefox/Edge, igual que cualquier sitio con notificaciones).
+
+Para que la opción 2 funcione hace falta **desplegar la app a un hosting que esté encendido
+24/7** (hoy solo corre en tu computador mientras tienes `npm run dev` activo) y un disparador
+externo, porque el plan gratuito de Vercel limita sus Cron Jobs propios a una vez al día.
+
+### Paso a paso (todo gratis)
+
+1. **Base de datos real** — crea una cuenta gratis en [Neon](https://neon.tech) (Postgres,
+   0.5 GB gratis) y copia la cadena de conexión.
+2. **Hosting** — crea una cuenta gratis en [Vercel](https://vercel.com), conecta este repositorio
+   (necesita estar en GitHub) e impórtalo como proyecto.
+3. **Variables de entorno** en el panel de Vercel (Settings → Environment Variables), las mismas
+   de `.env.local` más las de push:
+   - `JWT_SECRET`, `DATABASE_URL` (la de Neon), `ANTHROPIC_API_KEY` (opcional)
+   - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (genéralas una vez con
+     `npx web-push generate-vapid-keys`), `VAPID_CONTACT_EMAIL`
+   - `CRON_SECRET` (cualquier texto largo aleatorio — protege el endpoint del cron para que nadie
+     más pueda llamarlo)
+4. **Migrar el esquema** contra la base de Neon: con `DATABASE_URL` apuntando a Neon en tu
+   `.env.local` local, corre `npm run db:migrate` una vez (crea las tablas en la base real).
+5. **Programar el disparador** — crea una cuenta gratis en [cron-job.org](https://cron-job.org),
+   y agrega un cronjob que llame cada 1-5 minutos a:
+   `https://tu-proyecto.vercel.app/api/cron/check-alarms?secret=EL_MISMO_CRON_SECRET`
+6. En cada dispositivo, abre la app ya desplegada y acepta el banner "🔔 ¿Activar avisos de
+   tareas por vencer en este dispositivo?" — eso registra el dispositivo para recibir el push.
+
+Con eso, el aviso llega como notificación nativa del sistema operativo aunque el navegador esté
+cerrado (mientras el dispositivo tenga internet), sin depender de Outlook, email ni SMS.
+
 ## Estructura del proyecto
 
 ```
@@ -154,8 +194,6 @@ tests/            Pruebas automatizadas (Vitest)
 
 ## Futuras mejoras
 
-- Notificaciones push reales (hoy la base de datos ya registra `notifications`; falta el canal de
-  entrega push/móvil).
 - Proveedor de voz en la nube (STT/TTS) como alternativa a la Web Speech API del navegador —la
   interfaz en `src/lib/voice.ts` ya está preparada para ello.
 - Gráficos de tendencia de gastos y exportación de datos.

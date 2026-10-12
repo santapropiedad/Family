@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
+import { subscribeToPush } from "@/lib/push-client";
 import type { Notification } from "@/types/domain";
 
 const PERMISSION_ASKED_KEY = "familia-plus:alarm-permission-asked";
@@ -39,6 +40,12 @@ export default function TaskAlarmWatcher() {
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof Notification === "undefined") return;
+    if (Notification.permission === "granted") {
+      // Ya tenía el permiso (de antes de que existiera push, o de otra sesión en este
+      // dispositivo): asegura que también quede suscrito a push, sin pedir nada de nuevo.
+      subscribeToPush();
+      return;
+    }
     try {
       if (Notification.permission === "default" && !localStorage.getItem(PERMISSION_ASKED_KEY)) {
         setAskPermission(true);
@@ -81,14 +88,17 @@ export default function TaskAlarmWatcher() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  function enableNotifications() {
+  async function enableNotifications() {
     try {
       localStorage.setItem(PERMISSION_ASKED_KEY, "1");
     } catch {
       /* no-op */
     }
     setAskPermission(false);
-    Notification.requestPermission().catch(() => {});
+    const permission = await Notification.requestPermission().catch(() => "denied" as NotificationPermission);
+    // La suscripción push es lo que permite avisar con la app cerrada; se intenta
+    // apenas se concede el permiso, además del polling que ya cubre con la app abierta.
+    if (permission === "granted") subscribeToPush();
   }
 
   function dismiss() {
