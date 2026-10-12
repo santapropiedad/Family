@@ -6,6 +6,8 @@ import { useSession } from "./SessionProvider";
 import BottomNav from "./BottomNav";
 import Sidebar from "./Sidebar";
 import AssistantButton from "./AssistantButton";
+import TaskAlarmWatcher from "./TaskAlarmWatcher";
+import NotificationsBell from "./NotificationsBell";
 
 const PUBLIC_PATHS = ["/login", "/register"];
 
@@ -42,6 +44,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
       </div>
       <BottomNav />
       <AssistantButton />
+      <NotificationsBell />
+      <TaskAlarmWatcher />
     </div>
   );
 }

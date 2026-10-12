@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api-client";
 import { useSession } from "@/components/SessionProvider";
+import { postponeDue } from "@/lib/taskTime";
 import type { FamilyEvent, Task } from "@/types/domain";
 
 function greetingForHour(hour: number): string {
@@ -32,6 +33,8 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [postponeFor, setPostponeFor] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -64,14 +67,27 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
   async function addTask(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    await api.post("/api/tasks", { title: title.trim(), dueDate: date || null, assigneeIds: [memberId] });
+    await api.post("/api/tasks", {
+      title: title.trim(),
+      dueDate: date || null,
+      dueTime: time || null,
+      assigneeIds: [memberId],
+    });
     setTitle("");
     setDate("");
+    setTime("");
     load();
   }
 
   async function toggleTask(task: Task) {
     await api.patch(`/api/tasks/${task.id}`, { status: task.status === "completed" ? "pending" : "completed" });
+    load();
+  }
+
+  async function postpone(task: Task, minutes: number) {
+    const { dueDate, dueTime } = postponeDue(task, minutes);
+    await api.patch(`/api/tasks/${task.id}`, { dueDate, dueTime });
+    setPostponeFor(null);
     load();
   }
 
@@ -139,16 +155,43 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
             <div className="card divide-y">
               {tasks.length === 0 && <p className="text-sm text-muted p-4">No hay tareas pendientes.</p>}
               {tasks.map((t) => (
-                <div key={t.id} className="flex items-center gap-3 px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={t.status === "completed"}
-                    onChange={() => toggleTask(t)}
-                    className="h-4 w-4"
-                  />
-                  <span className={`priority-dot ${t.priority}`} />
-                  <p className="flex-1 text-sm">{t.title}</p>
-                  {t.due_date && <span className="text-xs text-muted">{t.due_date}</span>}
+                <div key={t.id} className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={t.status === "completed"}
+                      onChange={() => toggleTask(t)}
+                      className="h-4 w-4"
+                    />
+                    <span className={`priority-dot ${t.priority}`} />
+                    <p className="flex-1 text-sm">{t.title}</p>
+                    {t.due_date && (
+                      <span className="text-xs text-muted shrink-0">
+                        {t.due_date}
+                        {t.due_time && ` ${t.due_time.slice(0, 5)}`}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => setPostponeFor(postponeFor === t.id ? null : t.id)}
+                      className="text-xs text-muted shrink-0"
+                      title="Postergar"
+                    >
+                      ⏰
+                    </button>
+                  </div>
+                  {postponeFor === t.id && (
+                    <div className="flex gap-2 pt-2 pl-7">
+                      <button onClick={() => postpone(t, 15)} className="text-xs px-2 py-1 rounded-lg bg-border/60">
+                        +15 min
+                      </button>
+                      <button onClick={() => postpone(t, 60)} className="text-xs px-2 py-1 rounded-lg bg-border/60">
+                        +1 hora
+                      </button>
+                      <button onClick={() => postpone(t, 60 * 24)} className="text-xs px-2 py-1 rounded-lg bg-border/60">
+                        +1 día
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -195,6 +238,13 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
+                  className="rounded-xl border px-3 py-2 text-sm bg-transparent"
+                />
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  title="Hora de vencimiento (para avisos 15 min antes y 10 min después)"
                   className="rounded-xl border px-3 py-2 text-sm bg-transparent"
                 />
               </div>
