@@ -107,7 +107,7 @@ export default function HoyPage() {
         <h2 className="text-sm font-semibold text-muted mb-2">PRÓXIMAMENTE</h2>
         <div className="card p-3 space-y-2">
           {events.length === 0 && <p className="text-sm text-muted py-2 px-1">No hay actividades próximas.</p>}
-          {events.slice(0, 5).map((e) => (
+          {events.map((e) => (
             <div key={e.id} className="flex items-center justify-between px-1 py-1.5">
               <span className="text-sm">{e.title}</span>
               <span className="text-xs text-muted capitalize">{formatEventTime(e.start_at)}</span>
