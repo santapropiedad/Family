@@ -117,6 +117,14 @@ pendiente). Para conversación libre y comprensión de lenguaje natural abierto:
 Detalle completo de la arquitectura de IA, las herramientas disponibles y los niveles de
 confirmación en [AI.md](AI.md).
 
+### Escanear boletas (Control de Gastos)
+
+El botón "📷 Escanear boleta y registrar gasto" en Gastos sube una foto de la boleta, Claude
+(visión) extrae monto, comercio, fecha y categoría, y el gasto se registra automáticamente
+(`source: "receipt_scan"`), sin pasos manuales. **Requiere `ANTHROPIC_API_KEY`** — no existe un
+modo de reglas para leer imágenes; sin la clave, el botón muestra un mensaje explicando que hay
+que registrar el gasto a mano mientras tanto.
+
 ## Asistente de voz
 
 El botón 🎙️ flotante (o la página "Hoy") abre el panel del asistente. El micrófono usa el

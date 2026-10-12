@@ -215,6 +215,9 @@ CREATE INDEX IF NOT EXISTS idx_expenses_family ON expenses(family_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_spent_at ON expenses(spent_at);
 CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id);
 
+ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_source_check;
+ALTER TABLE expenses ADD CONSTRAINT expenses_source_check CHECK (source IN ('manual', 'ai', 'receipt_scan'));
+
 CREATE TABLE IF NOT EXISTS budgets (
   id UUID PRIMARY KEY,
   family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
