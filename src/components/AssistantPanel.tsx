@@ -25,7 +25,21 @@ interface ChatResponse {
   mode: "claude" | "rules";
 }
 
-export default function AssistantPanel({ onClose }: { onClose: () => void }) {
+interface AssistantPanelProps {
+  onClose: () => void;
+  initialCommand?: string;
+  autoListenOnOpen?: boolean;
+  handsFree: boolean;
+  onToggleHandsFree: () => void;
+}
+
+export default function AssistantPanel({
+  onClose,
+  initialCommand,
+  autoListenOnOpen,
+  handsFree,
+  onToggleHandsFree,
+}: AssistantPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -107,15 +121,34 @@ export default function AssistantPanel({ onClose }: { onClose: () => void }) {
     );
   }
 
+  useEffect(() => {
+    if (initialCommand && initialCommand.trim()) {
+      send(initialCommand);
+    } else if (autoListenOnOpen) {
+      toggleListening();
+    }
+    // Solo al abrir el panel (activado por la palabra de activación), no en cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center bg-black/40">
       <div className="card w-full md:max-w-lg md:mx-4 h-[85vh] md:h-[70vh] flex flex-col rounded-t-3xl md:rounded-3xl overflow-hidden">
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div>
             <p className="font-semibold">🎙️ Familia+ IA</p>
-            <p className="text-xs text-muted">Pregúntame o pídeme algo</p>
+            <p className="text-xs text-muted">
+              {handsFree ? "Di \"Hey Familia\" para hablarme sin tocar nada" : "Pregúntame o pídeme algo"}
+            </p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={onToggleHandsFree}
+              title={handsFree ? "Desactivar activación por voz" : "Activar: di 'Hey Familia' para hablarme sin tocar nada"}
+              className={`text-xs px-2 py-1 rounded-lg ${handsFree ? "bg-primary text-white" : "hover:bg-border/60"}`}
+            >
+              🙌 {handsFree ? "Manos libres: ON" : "Manos libres: OFF"}
+            </button>
             <button
               onClick={() => setSpeakReplies((v) => !v)}
               title={speakReplies ? "Silenciar respuestas" : "Activar voz en respuestas"}
