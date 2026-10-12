@@ -48,6 +48,15 @@
   border-color: var(--border);
 }
 
+/* En celulares chicos, todo (texto, paddings, separaciones) se basa en "rem", así que
+   reducir el tamaño base de la página aprieta la app entera de forma pareja, sin tener
+   que tocar cada pantalla una por una. */
+@media (max-width: 480px) {
+  html {
+    font-size: 15px;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
