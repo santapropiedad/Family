@@ -12,6 +12,25 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
+export const updateCredentialsSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(200),
+    newEmail: z.string().trim().email().max(160).optional(),
+    newPassword: z.string().min(8).max(200).optional(),
+  })
+  .refine((data) => data.newEmail || data.newPassword, {
+    message: "Debes indicar un correo o una contraseña nueva.",
+  });
+
+export const setMemberLoginSchema = z
+  .object({
+    email: z.string().trim().email().max(160).optional(),
+    password: z.string().min(8).max(200).optional(),
+  })
+  .refine((data) => data.email || data.password, {
+    message: "Debes indicar un correo o una contraseña.",
+  });
+
 export const addMemberSchema = z.object({
   name: z.string().trim().min(1).max(80),
   role: z.enum(["admin", "adult", "child"]),

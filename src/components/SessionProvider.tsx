@@ -11,6 +11,7 @@ export interface Session {
   familyId: string;
   role: Role;
   name: string;
+  email: string | null;
 }
 
 interface SessionContextValue {

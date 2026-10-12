@@ -1,7 +1,7 @@
 import { getDb } from "@/db/client";
 import { newId } from "@/lib/ids";
-import { hashPassword } from "@/lib/auth";
-import { AppError, NotFoundError } from "@/lib/errors";
+import { hashPassword, verifyPassword } from "@/lib/auth";
+import { AppError, AuthError, NotFoundError } from "@/lib/errors";
 import type { Role } from "@/lib/permissions";
 import type { AppUser, FamilyMember } from "@/types/domain";
 
@@ -118,4 +118,120 @@ export async function findUserByEmail(
 export async function touchLastLogin(userId: string): Promise<void> {
   const db = await getDb();
   await db.query("UPDATE users SET last_login_at = now() WHERE id = $1", [userId]);
+}
+
+export interface SetMemberLoginInput {
+  email?: string;
+  password?: string;
+}
+
+/**
+ * Un administrador da o modifica el acceso de login de otro integrante: crea una cuenta nueva
+ * (ej. alguien que nunca tuvo una), cambia solo el correo, o solo la contraseña (ej. la olvidó).
+ * A diferencia de `updateCredentials`, esto no exige la contraseña actual del integrante: la
+ * autoridad viene del rol de quien lo ejecuta (verificado por capability en la ruta), no de
+ * conocer la contraseña de otra persona.
+ */
+export async function setMemberLogin(
+  familyId: string,
+  memberId: string,
+  input: SetMemberLoginInput
+): Promise<void> {
+  await getMember(familyId, memberId);
+  const db = await getDb();
+
+  const currentLogin = await db.query<{ id: string; email: string }>(
+    "SELECT id, email FROM users WHERE family_member_id = $1",
+    [memberId]
+  );
+  const hasLogin = currentLogin.rows.length > 0;
+
+  if (!hasLogin && (!input.email || !input.password)) {
+    throw new AppError(
+      "Este integrante todavía no tiene cuenta: indica correo y contraseña para crearla.",
+      400,
+      "login_required_fields"
+    );
+  }
+
+  if (input.email) {
+    const email = input.email.toLowerCase().trim();
+    const existingEmail = await db.query<{ id: string; family_member_id: string }>(
+      "SELECT id, family_member_id FROM users WHERE email = $1",
+      [email]
+    );
+    if (existingEmail.rows.length > 0 && existingEmail.rows[0].family_member_id !== memberId) {
+      throw new AppError("Ya existe una cuenta con ese correo electrónico.", 409, "email_taken");
+    }
+  }
+
+  if (!hasLogin) {
+    const passwordHash = await hashPassword(input.password!);
+    await db.query(
+      `INSERT INTO users (id, family_member_id, email, password_hash) VALUES ($1, $2, $3, $4)`,
+      [newId(), memberId, input.email!.toLowerCase().trim(), passwordHash]
+    );
+    return;
+  }
+
+  if (input.email) {
+    await db.query("UPDATE users SET email = $1, updated_at = now() WHERE family_member_id = $2", [
+      input.email.toLowerCase().trim(),
+      memberId,
+    ]);
+  }
+  if (input.password) {
+    const passwordHash = await hashPassword(input.password);
+    await db.query("UPDATE users SET password_hash = $1, updated_at = now() WHERE family_member_id = $2", [
+      passwordHash,
+      memberId,
+    ]);
+  }
+}
+
+export async function getUserById(userId: string): Promise<AppUser | null> {
+  const db = await getDb();
+  const result = await db.query<AppUser>("SELECT * FROM users WHERE id = $1", [userId]);
+  return result.rows[0] ?? null;
+}
+
+export interface UpdateCredentialsInput {
+  currentPassword: string;
+  newEmail?: string;
+  newPassword?: string;
+}
+
+/**
+ * Cambia el correo y/o la contraseña de inicio de sesión del propio usuario.
+ * Exige la contraseña actual (aunque la sesión ya esté autenticada) como defensa extra:
+ * en un dispositivo familiar compartido, alguien con el navegador abierto no debería poder
+ * tomar el control de la cuenta solo por tener la pestaña a mano.
+ */
+export async function updateCredentials(userId: string, input: UpdateCredentialsInput): Promise<void> {
+  const user = await getUserById(userId);
+  if (!user) throw new NotFoundError("Cuenta no encontrada.");
+
+  const ok = await verifyPassword(input.currentPassword, user.password_hash);
+  if (!ok) throw new AuthError("La contraseña actual no es correcta.");
+
+  const db = await getDb();
+  if (input.newEmail && input.newEmail.toLowerCase().trim() !== user.email) {
+    const email = input.newEmail.toLowerCase().trim();
+    const existing = await db.query<{ id: string }>("SELECT id FROM users WHERE email = $1 AND id != $2", [
+      email,
+      userId,
+    ]);
+    if (existing.rows.length > 0) {
+      throw new AppError("Ya existe una cuenta con ese correo electrónico.", 409, "email_taken");
+    }
+    await db.query("UPDATE users SET email = $1, updated_at = now() WHERE id = $2", [email, userId]);
+  }
+
+  if (input.newPassword) {
+    const passwordHash = await hashPassword(input.newPassword);
+    await db.query("UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2", [
+      passwordHash,
+      userId,
+    ]);
+  }
 }
