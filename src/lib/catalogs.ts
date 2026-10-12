@@ -104,6 +104,17 @@ export const CATALOG_SUPERMERCADO = [
   "Bandeja pollo",
   "Chuletas",
   "Churrascos",
+  "Bebidas",
+  "Jugos",
+  "Leche colación",
+  "Jugo colación",
+  "Paté",
+  "Raid moscas y zancudos",
+  "Raid arañas",
+  "Lisoform",
+  "Desodorante ambiental",
+  "Repelente",
+  "Protector solar",
 ];
 
 export const UNIT_OPTIONS = [
