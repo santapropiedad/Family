@@ -2,7 +2,7 @@ import { getDb } from "@/db/client";
 import { newId } from "@/lib/ids";
 import { ForbiddenError, AppError } from "@/lib/errors";
 import { hasCapability } from "@/lib/permissions";
-import { getTool, type ToolContext } from "@/ai/tools";
+import { getTool, resolveConfirmationLevel, type ToolContext } from "@/ai/tools";
 
 export interface ExecuteResult {
   status: "executed" | "pending_confirmation" | "rejected";
@@ -32,6 +32,7 @@ export async function executeTool(
   const db = await getDb();
   const tool = getTool(toolName);
   const actionId = newId();
+  const confirmationLevel = resolveConfirmationLevel(tool, params);
 
   if (tool.requiredCapability && !hasCapability(ctx.actorRole, tool.requiredCapability)) {
     await db.query(
@@ -44,7 +45,7 @@ export async function executeTool(
         conversationId ?? null,
         toolName,
         JSON.stringify(params),
-        tool.confirmationLevel,
+        confirmationLevel,
         "forbidden",
       ]
     );
@@ -53,11 +54,11 @@ export async function executeTool(
     );
   }
 
-  if (tool.confirmationLevel !== "auto") {
+  if (confirmationLevel !== "auto") {
     await db.query(
       `INSERT INTO ai_actions (id, family_id, family_member_id, conversation_id, tool_name, parameters, confirmation_level, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending_confirmation')`,
-      [actionId, ctx.familyId, ctx.actorMemberId, conversationId ?? null, toolName, JSON.stringify(params), tool.confirmationLevel]
+      [actionId, ctx.familyId, ctx.actorMemberId, conversationId ?? null, toolName, JSON.stringify(params), confirmationLevel]
     );
     return {
       status: "pending_confirmation",
@@ -79,7 +80,7 @@ export async function executeTool(
         conversationId ?? null,
         toolName,
         JSON.stringify(params),
-        tool.confirmationLevel,
+        confirmationLevel,
         JSON.stringify(result ?? null),
       ]
     );
@@ -90,7 +91,7 @@ export async function executeTool(
     await db.query(
       `INSERT INTO ai_actions (id, family_id, family_member_id, conversation_id, tool_name, parameters, confirmation_level, status, error_message)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'failed', $8)`,
-      [actionId, ctx.familyId, ctx.actorMemberId, conversationId ?? null, toolName, JSON.stringify(params), tool.confirmationLevel, message]
+      [actionId, ctx.familyId, ctx.actorMemberId, conversationId ?? null, toolName, JSON.stringify(params), confirmationLevel, message]
     );
     throw err;
   }
@@ -165,6 +166,10 @@ async function logAudit(ctx: ToolContext, action: string, toolName: string, enti
   );
 }
 
+function money(n: number): string {
+  return `$${Math.round(n).toLocaleString("es-CL")}`;
+}
+
 function describePendingAction(toolName: string, params: Record<string, unknown>): string {
   switch (toolName) {
     case "pay_bill":
@@ -173,6 +178,10 @@ function describePendingAction(toolName: string, params: Record<string, unknown>
       return "¿Confirmas que quieres eliminar esta tarea? Esta acción no se puede deshacer.";
     case "delete_event":
       return "¿Confirmas que quieres eliminar este evento? Esta acción no se puede deshacer.";
+    case "log_expense":
+      return `Voy a registrar un gasto de ${money(Number(params.amount ?? 0))}${params.category_name ? ` en ${params.category_name}` : ""}. ¿Confirmas?`;
+    case "record_purchase":
+      return `Voy a registrar la compra de ${params.item_name ?? "este producto"} por ${money(Number(params.amount ?? 0))}. ¿Confirmas?`;
     default:
       return `¿Confirmas que quieres realizar esta acción? (${toolName}: ${JSON.stringify(params)})`;
   }

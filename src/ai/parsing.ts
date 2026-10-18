@@ -15,20 +15,28 @@ export function parseAmount(text: string): number | null {
   return null;
 }
 
-const WEEKDAYS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const WEEKDAYS = ["domingo", "lunes", "martes", "miercoles", "jueves", "viernes", "sabado"];
+
+/** Quita tildes para que "sabado"/"mañana" sin acento (frecuente al escribir desde el celular, o
+ * algún resultado de reconocimiento de voz sin diacríticos) igual se reconozca. */
+function stripAccents(text: string): string {
+  return text.normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
 
 /** Resuelve palabras de fecha relativa ("hoy", "mañana", "pasado mañana", días de la semana) a YYYY-MM-DD. */
 export function parseRelativeDate(text: string, now = new Date()): string | null {
-  const lower = text.toLowerCase();
+  const lower = stripAccents(text.toLowerCase());
   const base = new Date(now);
   base.setHours(0, 0, 0, 0);
 
   if (/\bhoy\b/.test(lower)) return toDateString(base);
-  if (/\bpasado\s*mañana\b/.test(lower)) {
+  if (/\bpasado\s*manana\b/.test(lower)) {
     base.setDate(base.getDate() + 2);
     return toDateString(base);
   }
-  if (/\bmañana\b/.test(lower)) {
+  // "mañana" significa "tomorrow", pero "de/por/a la mañana" significa "in the morning" (hora del
+  // día, no fecha) — sin este chequeo, "a las 10 de la mañana" se leía como "mañana" (tomorrow).
+  if (/\bmanana\b/.test(lower) && !/\bla\s+manana\b/.test(lower)) {
     base.setDate(base.getDate() + 1);
     return toDateString(base);
   }
@@ -54,6 +62,33 @@ export function parseRecurrence(text: string): "none" | "daily" | "weekly" | "mo
 
 function toDateString(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+const HOUR_WORDS: Record<string, number> = {
+  una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12,
+};
+
+/** Extrae una hora del día ("a las 10:30", "a las diez de la mañana", "a las 3 de la tarde") a HH:MM:SS. */
+export function parseTimeOfDay(text: string): string | null {
+  const lower = text.toLowerCase();
+  const period = /\btarde\b/.test(lower) ? "tarde" : /\bnoche\b/.test(lower) ? "noche" : null;
+
+  const digitMatch = lower.match(/\ba\s+las?\s+(\d{1,2})(?::(\d{2}))?\b/);
+  if (digitMatch) {
+    let hour = parseInt(digitMatch[1], 10);
+    const minute = digitMatch[2] ?? "00";
+    if (period && hour < 12) hour += 12;
+    return `${String(hour).padStart(2, "0")}:${minute}:00`;
+  }
+
+  const wordPattern = Object.keys(HOUR_WORDS).join("|");
+  const wordMatch = lower.match(new RegExp(`\\ba\\s+las?\\s+(${wordPattern})\\b`));
+  if (wordMatch) {
+    let hour = HOUR_WORDS[wordMatch[1]];
+    if (period && hour < 12) hour += 12;
+    return `${String(hour).padStart(2, "0")}:00:00`;
+  }
+  return null;
 }
 
 /** Extrae "N unidad de producto" (ej. "tres kilos de arroz", "2 litros de leche"). */

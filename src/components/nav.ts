@@ -13,6 +13,7 @@ export const PRIMARY_NAV: NavItem[] = [
 ];
 
 export const SECONDARY_NAV: NavItem[] = [
+  { href: "/voz", label: "Familia+ Voz", icon: "🎙️" },
   { href: "/calendario", label: "Calendario", icon: "📅" },
   { href: "/hijos", label: "Hijos", icon: "🎒" },
   { href: "/inteligencia", label: "Inteligencia", icon: "🧠" },

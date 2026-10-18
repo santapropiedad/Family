@@ -102,4 +102,16 @@ describe("motor de IA: niveles de confirmación", () => {
     );
     expect(result.status).toBe("executed");
   });
+
+  it("un gasto bajo el umbral se registra directo, pero uno igual o mayor pide confirmación", async () => {
+    const { familyId, adultId } = await createTestFamily("expense-threshold");
+    const ctx = { familyId, actorMemberId: adultId, actorRole: "adult" as const };
+
+    const small = await executeTool(ctx, "log_expense", { amount: 5000 });
+    expect(small.status).toBe("executed");
+
+    const large = await executeTool(ctx, "log_expense", { amount: 30000 });
+    expect(large.status).toBe("pending_confirmation");
+    expect(large.confirmationMessage).toMatch(/\$30\.000/);
+  });
 });

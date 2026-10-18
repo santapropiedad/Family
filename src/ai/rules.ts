@@ -1,6 +1,6 @@
 import type { ToolContext } from "@/ai/tools";
 import { executeTool, type ExecuteResult } from "@/ai/executor";
-import { parseAmount, parseQuantityItem, parseRecurrence, parseRelativeDate } from "@/ai/parsing";
+import { parseAmount, parseQuantityItem, parseRecurrence, parseRelativeDate, parseTimeOfDay } from "@/ai/parsing";
 import * as membersService from "@/services/members";
 import { buildTodaySummary } from "@/services/insights";
 import type { FamilyMember } from "@/types/domain";
@@ -45,10 +45,88 @@ export async function handleWithRules(
         conversationId
       );
       return {
-        reply: `Listo. Registré la compra de ${buyMatch[1].trim()} por ${money(amount)}, actualicé el inventario y la quité de la lista si estaba pendiente.`,
+        reply:
+          action.status === "pending_confirmation"
+            ? action.confirmationMessage!
+            : `Listo. Registré la compra de ${buyMatch[1].trim()} por ${money(amount)}, actualicé el inventario y la quité de la lista si estaba pendiente.`,
         action,
       };
     }
+  }
+
+  // "Registra que compré tres litros de leche" (sin mencionar el precio: solo suma al
+  // inventario, no se inventa ni se pide un gasto que el usuario nunca mencionó).
+  const buyNoAmountMatch = lower.match(/(?:registra\s+que\s+)?compr[eé]\s+(.+)/);
+  if (buyNoAmountMatch) {
+    const parsed = parseQuantityItem(buyNoAmountMatch[1]);
+    const itemName = parsed ? parsed.name : buyNoAmountMatch[1].trim();
+    const action = await executeTool(
+      ctx,
+      "add_purchased_quantity",
+      parsed ? { item_name: parsed.name, quantity: parsed.quantity, unit: parsed.unit } : { item_name: itemName },
+      conversationId
+    );
+    return {
+      reply: `Listo, actualicé el inventario de "${itemName}". Como no mencionaste el precio, no registré ningún gasto — si quieres, dime el monto y lo agrego.`,
+      action,
+    };
+  }
+
+  // "Registra un gasto de 5.000 pesos en transporte" (imperativo, sin "compré")
+  const imperativeExpenseMatch = lower.match(/registra\s+un\s+gasto\s+de\s+(.+?)\s+(?:en|de)\s+(.+)/);
+  if (imperativeExpenseMatch) {
+    const amount = parseAmount(imperativeExpenseMatch[1]);
+    if (amount) {
+      const category = imperativeExpenseMatch[2].trim();
+      const action = await executeTool(
+        ctx,
+        "log_expense",
+        { amount, category_name: category, description: category },
+        conversationId
+      );
+      return {
+        reply:
+          action.status === "pending_confirmation"
+            ? action.confirmationMessage!
+            : `Registré un gasto de ${money(amount)} en ${category}.`,
+        action,
+      };
+    }
+  }
+
+  // "¿Cuánto hemos gastado en supermercado?" (por categoría, antes del total general)
+  const categorySpendMatch = lower.match(/cu[aá]nto.*gastado.*en\s+(.+?)[\s?¿.!]*$/);
+  if (categorySpendMatch) {
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    const to = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+    const action = await executeTool(ctx, "query_expenses_summary", { from, to }, conversationId);
+    const data = action.result as
+      | { total: number; byCategory: Array<{ categoryName: string | null; total: number }> }
+      | undefined;
+    const target = categorySpendMatch[1].trim();
+    const match = data?.byCategory.find(
+      (c) => c.categoryName && (target.includes(c.categoryName.toLowerCase()) || c.categoryName.toLowerCase().includes(target))
+    );
+    return {
+      reply: match
+        ? `En ${match.categoryName} han gastado ${money(match.total)} este mes.`
+        : `No encontré gastos este mes en "${target}".`,
+      action,
+    };
+  }
+
+  // "Muéstrame los últimos gastos"
+  if (/(mu[eé]stra|ver|dime).*(gastos|gasto)|[uú]ltimos gastos/.test(lower)) {
+    const action = await executeTool(ctx, "list_expenses", { limit: 5 }, conversationId);
+    const expenses = (action.result as Array<{ amount: string; description: string | null; merchant: string | null }>) ?? [];
+    const reply =
+      expenses.length === 0
+        ? "No hay gastos registrados todavía."
+        : `Tus últimos gastos: ${expenses
+            .map((e) => `${e.description || e.merchant || "Gasto"} por ${money(Number(e.amount))}`)
+            .join("; ")}.`;
+    return { reply, action };
   }
 
   // "Gasté 20 mil pesos en supermercado" / "registré 15 mil pesos de supermercado"
@@ -62,8 +140,31 @@ export async function handleWithRules(
         { amount, description: spendMatch[2].trim() },
         conversationId
       );
-      return { reply: `Registré un gasto de ${money(amount)} en ${spendMatch[2].trim()}.`, action };
+      return {
+        reply:
+          action.status === "pending_confirmation"
+            ? action.confirmationMessage!
+            : `Registré un gasto de ${money(amount)} en ${spendMatch[2].trim()}.`,
+        action,
+      };
     }
+  }
+
+  // "¿Cuánta leche queda?" / "¿cuántos huevos tenemos?"
+  const stockMatch = lower.match(/cu[aá]nt[oa]s?\s+(.+?)\s+(queda|quedan|hay|tenemos)\b/);
+  if (stockMatch) {
+    const action = await executeTool(ctx, "list_inventory", {}, conversationId);
+    const items = (action.result as Array<{ name: string; current_quantity: string; unit: string | null }>) ?? [];
+    const target = stockMatch[1].trim();
+    const match = items.find(
+      (i) => i.name.toLowerCase().includes(target) || target.includes(i.name.toLowerCase())
+    );
+    return {
+      reply: match
+        ? `Quedan ${Number(match.current_quantity)} ${match.unit ?? "unidades"} de ${match.name}.`
+        : `No tengo registrado "${target}" en el inventario.`,
+      action,
+    };
   }
 
   // "Agrega leche" / "agrega tres kilos de arroz" / "agrega leche a las compras" /
@@ -121,6 +222,38 @@ export async function handleWithRules(
     };
   }
 
+  // "Crea una tarea para limpiar la cocina" (genérica, sin asignar a nadie en particular)
+  const createTaskMatch = lower.match(/^crea(r)?\s+una\s+tarea\s+(?:para\s+)?(.+)/);
+  if (createTaskMatch) {
+    const action = await executeTool(ctx, "create_task", { title: createTaskMatch[2].trim() }, conversationId);
+    return { reply: `Creé la tarea "${createTaskMatch[2].trim()}".`, action };
+  }
+
+  // "Marca como completada la tarea de sacar la basura"
+  const completeTaskMatch = lower.match(/marca(r)?\s+como\s+completada\s+(?:la\s+tarea\s+de\s+)?(.+)/);
+  if (completeTaskMatch) {
+    const listAction = await executeTool(ctx, "list_tasks", { status: "pending" }, conversationId);
+    const tasks = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+    const target = completeTaskMatch[2].trim();
+    const match = tasks.find(
+      (t) => t.title.toLowerCase().includes(target) || target.includes(t.title.toLowerCase())
+    );
+    if (!match) {
+      return { reply: `No encontré ninguna tarea pendiente que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "complete_task", { task_id: match.id }, conversationId);
+    return { reply: `Marqué como completada: "${match.title}".`, action };
+  }
+
+  // "¿Qué tareas están pendientes?"
+  if (/qu[eé]\s+tareas\b.*pendiente/.test(lower)) {
+    const action = await executeTool(ctx, "list_tasks", { status: "pending" }, conversationId);
+    const tasks = (action.result as Array<{ title: string }>) ?? [];
+    const reply =
+      tasks.length === 0 ? "No hay tareas pendientes. ¡Buen trabajo!" : `Tareas pendientes: ${tasks.map((t) => t.title).join(", ")}.`;
+    return { reply, action };
+  }
+
   // "¿Qué tiene Martina mañana?" / "¿qué tenemos este fin de semana?"
   const memberSchedule = findMemberByName(members, lower);
   if (memberSchedule && /(qu[eé] tiene|agenda|actividades)/.test(lower)) {
@@ -137,6 +270,47 @@ export async function handleWithRules(
         ? `${memberSchedule.name} no tiene actividades agendadas ese día.`
         : `${memberSchedule.name} tiene: ${events.map((e) => e.title).join(", ")}.`;
     return { reply, action };
+  }
+
+  // "¿Qué tenemos programado para mañana?" (de toda la familia, sin nombrar a nadie)
+  if (/qu[eé]\s+(tenemos|hay)\s+(programado|agendado)/.test(lower)) {
+    const date = parseRelativeDate(lower) ?? parseRelativeDate("hoy");
+    const action = await executeTool(
+      ctx,
+      "list_events",
+      { from: `${date}T00:00:00`, to: `${date}T23:59:59` },
+      conversationId
+    );
+    const events = (action.result as Array<{ title: string }>) ?? [];
+    const reply =
+      events.length === 0 ? "No hay nada programado para ese día." : `Para ese día tienen: ${events.map((e) => e.title).join(", ")}.`;
+    return { reply, action };
+  }
+
+  // "Crea un evento para el sábado a las diez de la mañana"
+  const createEventMatch = lower.match(/^crea(r)?\s+un\s+evento\s+(?:de\s+)?(.+)/);
+  if (createEventMatch) {
+    const body = createEventMatch[2];
+    const date = parseRelativeDate(body);
+    if (!date) {
+      return { reply: "¿Para qué día es el evento? Dime una fecha, por ejemplo 'el sábado' o 'mañana'." };
+    }
+    const time = parseTimeOfDay(body) ?? "09:00:00";
+    const title =
+      body
+        .replace(/\ba\s+las?\s+.+$/i, "") // la hora y lo que venga después, siempre al final
+        .replace(/\bpara\b/gi, "")
+        .replace(
+          /\b(el|la|del)?\s*(hoy|pasado\s*ma[ñn]ana|ma[ñn]ana|lunes|martes|mi[ée]rcoles|jueves|viernes|s[aá]bado|domingo)\b/gi,
+          ""
+        )
+        .replace(/\s+/g, " ")
+        .trim() || "Evento familiar";
+    const action = await executeTool(ctx, "create_event", { title, start_at: `${date}T${time}` }, conversationId);
+    return {
+      reply: `Creé el evento "${title}" para el ${date} a las ${time.slice(0, 5)}. Si querías otro título, puedes editarlo en Calendario.`,
+      action,
+    };
   }
 
   // "¿Qué falta comprar?" / "¿qué tenemos que comprar?"
@@ -172,6 +346,18 @@ export async function handleWithRules(
     };
   }
 
+  // "¿Qué mantenimientos están pendientes?" (listado general, antes de la consulta por nombre)
+  if (/qu[eé]\s+mantenci(o|ó)n(es)?\b.*pendiente/.test(lower)) {
+    const action = await executeTool(ctx, "list_maintenance", {}, conversationId);
+    const items = (action.result as Array<{ name: string; next_maintenance_at: string | null }>) ?? [];
+    const pending = items.filter((i) => i.next_maintenance_at);
+    const reply =
+      pending.length === 0
+        ? "No hay mantenciones con próxima fecha programada."
+        : `Mantenciones pendientes: ${pending.map((i) => `${i.name} (${i.next_maintenance_at})`).join(", ")}.`;
+    return { reply, action };
+  }
+
   // "¿Cuándo toca revisar el calefont?"
   const maintenanceMatch = lower.match(/cu[aá]ndo.*(revisar|mantenci[oó]n)\s+(?:el|la|los|las)?\s*(.+)/);
   if (maintenanceMatch) {
@@ -190,6 +376,6 @@ export async function handleWithRules(
 
   return {
     reply:
-      "No configuré una clave de Anthropic (ANTHROPIC_API_KEY), así que por ahora solo entiendo comandos simples: agregar compras, registrar gastos, crear recordatorios, asignar tareas y consultar lo pendiente. Para conversación libre, agrega la clave en .env.local.",
+      "No entendí ese pedido. Puedo ayudarte con cosas como: registrar o consultar gastos, agregar productos a la lista de compras, ver cuánto queda de algo, crear o completar tareas, crear eventos en el calendario y revisar mantenciones. Decímelo con esas palabras, o agrega ANTHROPIC_API_KEY en .env.local para que entienda frases más libres.",
   };
 }

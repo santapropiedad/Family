@@ -19,14 +19,31 @@ export interface ToolContext {
 
 export type ConfirmationLevel = "auto" | "confirm" | "always_confirm";
 
+/** Umbral sobre el cual un gasto pasa de ejecutarse directo a pedir confirmación primero. */
+export const EXPENSE_CONFIRMATION_THRESHOLD = 30_000;
+
 export interface ToolDefinition {
   name: string;
   /** Spanish description shown to the Claude model as the tool's function description. */
   description: string;
   parameters: Record<string, unknown>;
-  confirmationLevel: ConfirmationLevel;
+  /** Fijo, o calculado a partir de los parámetros (ej. pedir confirmación solo sobre cierto monto). */
+  confirmationLevel: ConfirmationLevel | ((params: Record<string, unknown>) => ConfirmationLevel);
   requiredCapability: Capability | null;
   handler: (ctx: ToolContext, params: Record<string, unknown>) => Promise<unknown>;
+}
+
+export function resolveConfirmationLevel(
+  tool: Pick<ToolDefinition, "confirmationLevel">,
+  params: Record<string, unknown>
+): ConfirmationLevel {
+  return typeof tool.confirmationLevel === "function" ? tool.confirmationLevel(params) : tool.confirmationLevel;
+}
+
+/** Gastos iguales o mayores al umbral piden confirmación; montos más chicos se registran directo. */
+function confirmLargeExpense(params: Record<string, unknown>): ConfirmationLevel {
+  const amount = Number(params.amount ?? 0);
+  return amount >= EXPENSE_CONFIRMATION_THRESHOLD ? "confirm" : "auto";
 }
 
 function str(description: string, extra: Record<string, unknown> = {}) {
@@ -277,7 +294,7 @@ export const TOOLS: ToolDefinition[] = [
       },
       required: ["item_name", "amount"],
     },
-    confirmationLevel: "auto",
+    confirmationLevel: confirmLargeExpense,
     requiredCapability: "shopping:manage",
     handler: async (ctx, params) =>
       shoppingService.recordPurchase(ctx.familyId, {
@@ -288,6 +305,27 @@ export const TOOLS: ToolDefinition[] = [
         familyMemberId: ctx.actorMemberId,
         source: "ai",
         createdBy: ctx.actorMemberId,
+      }),
+  },
+  {
+    name: "add_purchased_quantity",
+    description:
+      "Suma al inventario una cantidad que el usuario dice haber comprado, sin registrar ningún gasto. Úsalo cuando mencione qué compró pero NO diga el precio (si dice el precio, usa record_purchase en su lugar).",
+    parameters: {
+      type: "object",
+      properties: {
+        item_name: str("Nombre del producto"),
+        quantity: num("Cantidad comprada, por defecto 1"),
+        unit: str("Unidad, si se menciona (kg, litros, unidades, etc.)"),
+      },
+      required: ["item_name"],
+    },
+    confirmationLevel: "auto",
+    requiredCapability: "inventory:manage",
+    handler: async (ctx, params) =>
+      shoppingService.upsertInventoryOnPurchase(ctx.familyId, params.item_name as string, {
+        quantityDelta: (params.quantity as number) ?? 1,
+        unit: (params.unit as string) ?? null,
       }),
   },
   {
@@ -314,7 +352,7 @@ export const TOOLS: ToolDefinition[] = [
       },
       required: ["amount"],
     },
-    confirmationLevel: "auto",
+    confirmationLevel: confirmLargeExpense,
     requiredCapability: "finances:manage",
     handler: async (ctx, params) => {
       const categoryName = params.category_name as string | undefined;
@@ -329,6 +367,26 @@ export const TOOLS: ToolDefinition[] = [
         source: "ai",
         createdBy: ctx.actorMemberId,
       });
+    },
+  },
+  {
+    name: "list_expenses",
+    description: "Consulta los gastos más recientes registrados, opcionalmente filtrados por categoría.",
+    parameters: {
+      type: "object",
+      properties: {
+        category_id: str("ID de la categoría, si se quiere filtrar"),
+        limit: num("Cuántos gastos devolver como máximo, por defecto 5"),
+      },
+    },
+    confirmationLevel: "auto",
+    requiredCapability: "finances:view",
+    handler: async (ctx, params) => {
+      const expenses = await expensesService.listExpenses(ctx.familyId, {
+        categoryId: params.category_id as string | undefined,
+      });
+      const limit = (params.limit as number) ?? 5;
+      return expenses.slice(0, limit);
     },
   },
   {

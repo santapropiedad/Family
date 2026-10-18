@@ -31,7 +31,13 @@ interface AssistantPanelProps {
   autoListenOnOpen?: boolean;
   handsFree: boolean;
   onToggleHandsFree: () => void;
+  /** Pantalla completa dentro del layout normal (p.ej. /voz), en vez de modal flotante sobre la página. */
+  inline?: boolean;
 }
+
+// Evita ejecutar dos veces el mismo comando si el reconocimiento de voz dispara el resultado
+// final más de una vez, o si el usuario toca "Enviar" varias veces seguidas por accidente.
+const DUPLICATE_COMMAND_WINDOW_MS = 4000;
 
 export default function AssistantPanel({
   onClose,
@@ -39,6 +45,7 @@ export default function AssistantPanel({
   autoListenOnOpen,
   handsFree,
   onToggleHandsFree,
+  inline = false,
 }: AssistantPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -50,18 +57,35 @@ export default function AssistantPanel({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [speakReplies, setSpeakReplies] = useState(true);
   const listRef = useRef<HTMLDivElement>(null);
+  const lastCommandRef = useRef<{ text: string; at: number } | null>(null);
   const voice = getVoiceProvider();
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  function speakText(text: string) {
+    setSpeaking(true);
+    voice.speak(
+      text,
+      () => setSpeaking(true),
+      () => setSpeaking(false)
+    );
+  }
+
   async function send(text: string) {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    const now = Date.now();
+    const last = lastCommandRef.current;
+    if (last && last.text === trimmed && now - last.at < DUPLICATE_COMMAND_WINDOW_MS) {
+      return; // mismo comando repetido muy seguido (doble disparo del reconocimiento de voz)
+    }
+    lastCommandRef.current = { text: trimmed, at: now };
     setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "user", text: trimmed }]);
     setInput("");
     setSending(true);
@@ -72,7 +96,7 @@ export default function AssistantPanel({
         ...prev,
         { id: crypto.randomUUID(), role: "assistant", text: data.reply, pendingAction },
       ]);
-      if (speakReplies) voice.speak(data.reply);
+      if (speakReplies) speakText(data.reply);
     } catch (err) {
       const message = err instanceof Error ? err.message : "No pude responder. Inténtalo nuevamente.";
       setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", text: message }]);
@@ -131,15 +155,35 @@ export default function AssistantPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const statusText = speaking
+    ? "🔊 Hablando…"
+    : sending
+      ? "Pensando…"
+      : listening
+        ? "🎤 Escuchando…"
+        : handsFree
+          ? 'Di "Hey Familia" para hablarme sin tocar nada'
+          : "Pregúntame o pídeme algo";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center bg-black/40">
-      <div className="card w-full md:max-w-lg md:mx-4 h-[85vh] md:h-[70vh] flex flex-col rounded-t-3xl md:rounded-3xl overflow-hidden">
+    <div
+      className={
+        inline
+          ? "flex flex-col h-full"
+          : "fixed inset-0 z-50 flex items-end justify-center md:items-center bg-black/40"
+      }
+    >
+      <div
+        className={
+          inline
+            ? "card flex-1 flex flex-col overflow-hidden"
+            : "card w-full md:max-w-lg md:mx-4 h-[85vh] md:h-[70vh] flex flex-col rounded-t-3xl md:rounded-3xl overflow-hidden"
+        }
+      >
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div>
             <p className="font-semibold">🎙️ Family IA</p>
-            <p className="text-xs text-muted">
-              {handsFree ? "Di \"Hey Familia\" para hablarme sin tocar nada" : "Pregúntame o pídeme algo"}
-            </p>
+            <p className="text-xs text-muted">{statusText}</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -156,9 +200,11 @@ export default function AssistantPanel({
             >
               {speakReplies ? "🔊" : "🔇"}
             </button>
-            <button onClick={onClose} className="text-sm px-2 py-1 rounded-lg hover:bg-border/60">
-              ✕
-            </button>
+            {!inline && (
+              <button onClick={onClose} className="text-sm px-2 py-1 rounded-lg hover:bg-border/60">
+                ✕
+              </button>
+            )}
           </div>
         </header>
 
@@ -171,6 +217,15 @@ export default function AssistantPanel({
                 }`}
               >
                 <p>{m.text}</p>
+                {m.role === "assistant" && m.id !== "welcome" && (
+                  <button
+                    onClick={() => speakText(m.text)}
+                    title="Repetir en voz alta"
+                    className="mt-1.5 text-xs text-muted hover:text-foreground"
+                  >
+                    🔁 Repetir
+                  </button>
+                )}
                 {m.pendingAction && !m.resolved && (
                   <div className="mt-2 flex gap-2">
                     <button

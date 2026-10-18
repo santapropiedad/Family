@@ -8,7 +8,7 @@ export interface VoiceProvider {
   isSupported(): boolean;
   startListening(onResult: (text: string, isFinal: boolean) => void, onEnd: () => void, onError: (message: string) => void): void;
   stopListening(): void;
-  speak(text: string): void | Promise<void>;
+  speak(text: string, onStart?: () => void, onEnd?: () => void): void | Promise<void>;
   stopSpeaking(): void;
   /**
    * Escucha en segundo plano, de forma continua y gratuita (sin servidor), esperando
@@ -130,7 +130,7 @@ class WebSpeechProvider implements VoiceProvider {
     this.recognition?.stop();
   }
 
-  async speak(text: string): Promise<void> {
+  async speak(text: string, onStart?: () => void, onEnd?: () => void): Promise<void> {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     const voice = await pickSpanishVoice();
     window.speechSynthesis.cancel();
@@ -146,6 +146,9 @@ class WebSpeechProvider implements VoiceProvider {
       utterance.lang = "es-CL";
     }
     utterance.rate = 1;
+    utterance.onstart = () => onStart?.();
+    utterance.onend = () => onEnd?.();
+    utterance.onerror = () => onEnd?.();
     window.speechSynthesis.speak(utterance);
   }
 
