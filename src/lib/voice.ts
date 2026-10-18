@@ -91,6 +91,7 @@ class WebSpeechProvider implements VoiceProvider {
   private wakeOnError: ((message: string) => void) | null = null;
   private wakeSessionStartedAt = 0;
   private wakeQuickEndStreak = 0;
+  private wakeLastErrorCode = "";
 
   isSupported(): boolean {
     return getSpeechRecognitionCtor() !== null;
@@ -206,21 +207,26 @@ class WebSpeechProvider implements VoiceProvider {
         // Algunos celulares (sobre todo Android) cortan una sesión "continuous" casi al
         // instante en vez de mantenerla escuchando, y cada reinicio dispara el sonido del
         // sistema — sin esto, el celular queda pitando sin parar sin escuchar nunca de verdad.
-        // Si pasa varias veces seguidas, dejamos de insistir en vez de pitar para siempre.
+        // Si pasa varias veces seguidas, espaciamos más los reintentos (dándole tiempo al
+        // micrófono del celular a soltarse de verdad) y, si aun así no mejora, dejamos de
+        // insistir en vez de pitar para siempre.
         const lastedMs = Date.now() - this.wakeSessionStartedAt;
         this.wakeQuickEndStreak = lastedMs < 2000 ? this.wakeQuickEndStreak + 1 : 0;
-        if (this.wakeQuickEndStreak >= 3) {
+        if (this.wakeQuickEndStreak >= 4) {
           this.wakeActive = false;
           this.wakeOnStatusChange?.(false);
+          const code = this.wakeLastErrorCode ? ` (código: ${this.wakeLastErrorCode})` : "";
           this.wakeOnError?.(
-            "Manos libres no funciona de forma confiable en este celular/navegador — se corta solo apenas lo activa. Usa el botón del micrófono para hablarme en vez de 'Hey Familia'."
+            `Manos libres no funciona de forma confiable en este celular/navegador — se corta solo apenas lo activa${code}. Usa el botón del micrófono para hablarme en vez de "Hey Familia".`
           );
           return;
         }
-        this.wakeRestartTimer = setTimeout(launch, 250);
+        const delay = 400 * (this.wakeQuickEndStreak + 1); // 400ms, 800ms, 1200ms, 1600ms
+        this.wakeRestartTimer = setTimeout(launch, delay);
       };
       recognition.onerror = (event: unknown) => {
         const e = event as { error?: string };
+        this.wakeLastErrorCode = e.error ?? "";
         if (e.error === "not-allowed" || e.error === "service-not-allowed") {
           this.wakeActive = false;
           onError("Necesito permiso de micrófono para activarme por voz.");
@@ -233,7 +239,7 @@ class WebSpeechProvider implements VoiceProvider {
         recognition.start();
         onStatusChange(true);
       } catch {
-        this.wakeRestartTimer = setTimeout(launch, 250);
+        this.wakeRestartTimer = setTimeout(launch, 400);
       }
     };
 
