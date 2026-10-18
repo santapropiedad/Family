@@ -1,6 +1,6 @@
 ---
 name: family-build-deploy
-description: Documenta cómo se construyó y desplegó la app "Family" (antes "Familia+") — arquitectura técnica, decisiones y el paso a paso para guiar a un usuario sin conocimientos de programación por GitHub, GitHub Desktop, Vercel, Neon y cron-job.org. Usa esta skill SIEMPRE que el usuario pregunte cómo se hizo/desplegó la app, pida volver a desplegarla, reportar que "se cayó" el sitio o los avisos, pedir ayuda para configurar de nuevo las variables de entorno, el cron, o pedir que le expliques el proceso a otra persona — incluso si no menciona "deploy" o "skill" explícitamente (ej. "¿cómo subiste esto a internet?", "los avisos dejaron de llegar", "quiero hacer lo mismo para otra app mía", "explícame otra vez cómo funciona todo esto").
+description: Documenta cómo se construyó y desplegó la app "Family" (antes "Familia+") — arquitectura técnica, decisiones y el paso a paso para guiar a un usuario sin conocimientos de programación por GitHub, GitHub Desktop, Vercel, Neon, cron-job.org y Tabscanner. Usa esta skill SIEMPRE que el usuario pregunte cómo se hizo/desplegó la app, pida volver a desplegarla, reportar que "se cayó" el sitio o los avisos, pedir ayuda para configurar de nuevo las variables de entorno, el cron, o la clave de Tabscanner (lector de boletas), o pedir que le expliques el proceso o alguna función nueva a otra persona — incluso si no menciona "deploy" o "skill" explícitamente (ej. "¿cómo subiste esto a internet?", "los avisos dejaron de llegar", "quiero hacer lo mismo para otra app mía", "explícame otra vez cómo funciona todo esto", "¿cómo uso el lector de boletas/Familia+ Voz?").
 ---
 
 # Family: cómo se construyó y se desplegó
@@ -16,6 +16,8 @@ Esta skill es la memoria técnica del proyecto **Family** (carpeta `C:\Users\tea
 | **Hosting** | **Vercel** (plan Hobby, gratis) | El repo está en GitHub y Vercel lo redespliega solo con cada `git push` a `main` |
 | **Avisos con la app cerrada** | **Web Push** nativo del navegador (no Outlook, no email, no SMS) | Gratis, sin cuenta de terceros; `src/services/push.ts` + `public/sw.js` |
 | **Quién revisa las alarmas cada minuto** | **cron-job.org** (externo, gratis) llamando a `/api/cron/check-alarms` | El cron propio de Vercel en el plan Hobby **solo corre una vez al día** (confirmado con los docs oficiales de Vercel, enero 2026) — insuficiente para avisar 15 min antes / 10 min después de vencer una tarea |
+| **Lector de boletas** | **Tabscanner API v2** (`api3.tabscanner.com`, gratis hasta 200 boletas/mes, sin tarjeta) | OCR de boletas de supermercado — ver `src/services/receipts.ts`. Sube la foto, consulta el resultado (polling), y el usuario confirma antes de guardar nada |
+| **Asistente de voz** | **Web Speech API** del navegador (gratis, sin servicio de voz pago) | `SpeechRecognition` para escuchar, `speechSynthesis` para hablar; motor de reglas local (`src/ai/rules.ts`) interpreta comandos sin necesitar `ANTHROPIC_API_KEY` |
 
 ## Mapa de archivos clave
 
@@ -37,6 +39,7 @@ VAPID_PRIVATE_KEY=<idem>
 VAPID_CONTACT_EMAIL=<correo de contacto>
 CRON_SECRET=<string aleatorio largo>
 ANTHROPIC_API_KEY=<opcional — sin ella, el asistente usa el motor de reglas local>
+TABSCANNER_API_KEY=<opcional — sin ella, "Leer boleta" muestra un aviso en vez de fallar>
 ```
 
 ## Decisiones de arquitectura y el porqué
@@ -57,11 +60,22 @@ Para cambios futuros al código: tú (Claude) haces `git add` + `git commit` loc
 
 ## Otras trampas ya resueltas (no las repitas)
 
-- **PGlite no soporta dos procesos escribiendo a la vez** en `.pglite-data/`. Siempre detén `npm run dev` antes de `db:migrate` o `db:seed` en local (`Get-CimInstance Win32_Process -Filter "Name='node.exe'"` para encontrarlos, `Stop-Process -Force`).
+- **PGlite no soporta dos procesos escribiendo a la vez** en `.pglite-data/`. Siempre detén `npm run dev` antes de `db:migrate` o `db:seed` en local (`Get-Process node | Stop-Process -Force`) — **incluso si el servidor ya estaba corriendo de antes y solo querés correr una migración rápida**. Ya pasó más de una vez en la misma sesión por olvidarlo: el síntoma es que la migración "funciona" (no tira error) pero los cambios no aparecen en la app, porque el servidor sigue usando su propia conexión abierta sin enterarse del archivo reescrito por el otro proceso.
 - **El `CRON_SECRET` debe ir URL-encodeado** en la URL que se configura en cron-job.org: `/` → `%2F`, `=` → `%3D`. Si no, cron-job.org puede mandarlo mal cortado.
 - **Neon a veces tira un error genérico ("Algo salió mal")** al crear el primer proyecto — recargar la página y reintentar normalmente lo resuelve; no es un problema real de la cuenta.
 - **Para poblar la base de datos de Neon antes del primer deploy**: corre `db:migrate` y `db:seed` localmente con `$env:DATABASE_URL` seteada a la cadena de Neon solo para esos comandos (nunca la dejes en `.env.local`, que debe seguir apuntando a PGlite para desarrollo normal).
+- **Verifica la documentación de una API externa contra la cuenta real, no solo contra lo que encuentres buscando**: la integración de Tabscanner se armó primero según `docs.tabscanner.com` (API v1: `api.tabscanner.com/api/2/process`), pero el panel real de la cuenta del usuario mostraba una ruta distinta (`v2/receipts` en `api3.tabscanner.com`) — Tabscanner había migrado a v2 sin que la doc vieja lo dejara claro. Se detectó porque el usuario compartió una captura del panel, no porque se haya dudado de la doc de entrada. Antes de dar una integración de API externa por terminada, pedí o revisé el panel real de la cuenta cuando estuvo disponible.
+- **Los campos de hora en el navegador usan `vh`, no `dvh`, por error fácil de cometer**: en celular, Chrome muestra/oculta la barra de direcciones al hacer scroll, y `100vh`/`85vh` no descuenta eso — puede dejar contenido (como el cuadro de texto de un panel flotante) fuera de la parte visible de la pantalla. Usar `dvh` (dynamic viewport height) en cualquier panel o modal fijo a pantalla completa pensado para celular.
+- **`new Date("2026-10-18")` (fecha sin hora) se interpreta como medianoche UTC**, no medianoche local — al mostrarla con `.toLocaleDateString()` en hora de Chile (UTC-3/-4) retrocede un día. Pasa con cualquier campo tipo `due_date` (solo fecha, sin hora) que se muestre con `new Date(string)` directo. Fix: si el string es puro `YYYY-MM-DD` (regex `/^\d{4}-\d{2}-\d{2}$/`), agregarle `T00:00:00` antes de pasarlo a `new Date()` — eso lo ancla a medianoche *local* en vez de UTC. Ojo: los timestamps que vuelven de Postgres (`start_at` de eventos, `created_at`, etc.) NO tienen 'T' — vienen como `"2026-10-19 18:00:00-04"` (espacio, no 'T') — así que el chequeo para decidir si un string ya trae hora debe ser "¿es exactamente `YYYY-MM-DD`?", no "¿contiene una 'T'?".
+- **El reconocimiento de voz continuo (`continuous: true`) de Android Chrome no es confiable para "wake word" en segundo plano**: en algunos celulares corta la sesión casi al instante en vez de mantenerla escuchando, y cada reinicio automático dispara el sonido del sistema (pitido) — no silenciable desde JS. Si se reintenta sin un freno, el celular queda pitando sin parar sin escuchar nunca nada de verdad. Mitigación aplicada en `src/lib/voice.ts` (`startWakeWordListening`): back-off creciente entre reintentos y, tras varios reinicios seguidos demasiado rápidos, dejar de insistir y avisar con el código de error real en vez de pitar para siempre. Esto es una mitigación, no una solución completa — la causa raíz es una limitación real de la plataforma (Google reserva la activación por voz en segundo plano verdadera a su propio Asistente, con hardware dedicado de bajo consumo que una página web no puede usar).
+- **Los diálogos nativos `window.confirm()` bloquean la automatización del navegador de pruebas** (usado para verificar cambios en vivo) — un clic en un botón "Eliminar" que dispara `confirm()` puede no completarse de forma confiable vía automatización. Para verificar o limpiar datos de prueba que dependen de un `confirm()`, usar `fetch(...,{method:'DELETE'})` directo contra la API en vez de clickear el botón de la UI. Esto es una limitación del entorno de pruebas, no un bug de la app.
 
 ## El paso a paso completo para guiar al usuario
 
 El recorrido completo, con el lenguaje simple exacto usado (crear cuenta en GitHub → repo → GitHub Desktop → Vercel → Neon → variables de entorno → cron-job.org → instalar como PWA en el celular) está en **`references/guia-usuario-no-tecnico.md`**. Léelo antes de repetir este proceso con este usuario o con cualquier otro usuario no técnico — tiene el tono exacto a replicar (explicaciones cortas, un paso a la vez, nada de jerga, pedir capturas de pantalla para confirmar).
+
+## Cómo usar las funciones agregadas el 18 de octubre de 2026
+
+Lector de boletas (Tabscanner), Familia+ Voz (comandos, "Manos libres"), el selector Día/Semana/Mes
+en Hoy, la vista Mes del Calendario, y las categorías de Gastos nuevas — el paso a paso con el
+mismo tono para explicárselo al usuario está en **`references/funcionalidades-2026-10-18.md`**.
