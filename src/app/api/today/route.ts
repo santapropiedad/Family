@@ -5,6 +5,6 @@ import { buildTodaySummary } from "@/services/insights";
 export async function GET() {
   return handleRoute(async () => {
     const session = await requireSession();
-    return await buildTodaySummary(session.familyId);
+    return await buildTodaySummary(session.familyId, session.familyMemberId);
   });
 }

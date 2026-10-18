@@ -108,6 +108,40 @@ export async function createExpense(familyId: string, input: CreateExpenseInput)
   return result.rows[0];
 }
 
+export async function updateExpense(
+  familyId: string,
+  expenseId: string,
+  patch: Partial<
+    Pick<
+      CreateExpenseInput,
+      "amount" | "categoryId" | "subcategory" | "spentAt" | "merchant" | "paymentMethod" | "description" | "isRecurring"
+    >
+  >
+): Promise<Expense> {
+  await getExpense(familyId, expenseId);
+  const db = await getDb();
+  const COLUMN: Record<string, string> = {
+    amount: "amount",
+    categoryId: "category_id",
+    subcategory: "subcategory",
+    spentAt: "spent_at",
+    merchant: "merchant",
+    paymentMethod: "payment_method",
+    description: "description",
+    isRecurring: "is_recurring",
+  };
+  const fields = (Object.keys(patch) as Array<keyof typeof patch>).filter((f) => patch[f] !== undefined);
+  if (fields.length === 0) return getExpense(familyId, expenseId);
+  const setClauses = fields.map((field, i) => `${COLUMN[field]} = $${i + 3}`);
+  const values = fields.map((field) => patch[field]);
+  const result = await db.query<Expense>(
+    `UPDATE expenses SET ${setClauses.join(", ")}, updated_at = now()
+     WHERE family_id = $1 AND id = $2 RETURNING *`,
+    [familyId, expenseId, ...values]
+  );
+  return result.rows[0];
+}
+
 export async function deleteExpense(familyId: string, expenseId: string): Promise<void> {
   await getExpense(familyId, expenseId);
   const db = await getDb();

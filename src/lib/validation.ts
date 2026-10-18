@@ -116,6 +116,17 @@ export const createExpenseSchema = z.object({
   isRecurring: z.boolean().optional(),
 });
 
+export const updateExpenseSchema = z.object({
+  amount: z.number().positive().max(100_000_000).optional(),
+  categoryId: z.string().uuid().nullable().optional(),
+  subcategory: z.string().trim().max(80).nullable().optional(),
+  spentAt: z.string().trim().max(10).optional(),
+  merchant: z.string().trim().max(120).nullable().optional(),
+  paymentMethod: z.string().trim().max(60).nullable().optional(),
+  description: z.string().trim().max(400).nullable().optional(),
+  isRecurring: z.boolean().optional(),
+});
+
 export const createMaintenanceSchema = z.object({
   name: z.string().trim().min(1).max(120),
   location: z.string().trim().max(120).nullable().optional(),

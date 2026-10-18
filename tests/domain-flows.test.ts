@@ -7,7 +7,7 @@ import {
   recordPurchase,
   updateShoppingItem,
 } from "@/services/shopping";
-import { listExpenses } from "@/services/expenses";
+import { createExpense, listExpenses, updateExpense, deleteExpense } from "@/services/expenses";
 import { createEvent, findConflicts } from "@/services/events";
 import { createMaintenance, completeMaintenance } from "@/services/maintenance";
 import { createBill, payBill, listBills } from "@/services/bills";
@@ -64,6 +64,43 @@ describe("flujo conectado: compras, inventario y gastos", () => {
     expect(updated.name).toBe("Carne, pollo y pescado");
     expect(Number(updated.quantity)).toBe(2);
     expect(updated.priority).toBe("red");
+  });
+
+  it("edita el monto y la descripción de un gasto ya registrado", async () => {
+    const { familyId } = await createTestFamily("edit-expense");
+    const expense = await createExpense(familyId, { amount: 100000, description: "Supermercado" });
+
+    const updated = await updateExpense(familyId, expense.id, { amount: 85000, description: "Supermercado semanal" });
+
+    expect(Number(updated.amount)).toBe(85000);
+    expect(updated.description).toBe("Supermercado semanal");
+  });
+
+  it("editar solo el monto de un gasto no borra su descripción (regresión)", async () => {
+    const { familyId } = await createTestFamily("edit-expense-partial");
+    const expense = await createExpense(familyId, { amount: 100000, description: "Supermercado" });
+
+    // Simula lo que hace la ruta PATCH: un objeto con todas las claves posibles,
+    // donde las no enviadas por el cliente quedan en `undefined`.
+    const updated = await updateExpense(familyId, expense.id, {
+      amount: 90000,
+      description: undefined,
+      categoryId: undefined,
+      merchant: undefined,
+    });
+
+    expect(Number(updated.amount)).toBe(90000);
+    expect(updated.description).toBe("Supermercado");
+  });
+
+  it("elimina un gasto registrado", async () => {
+    const { familyId } = await createTestFamily("delete-expense");
+    const expense = await createExpense(familyId, { amount: 5000, description: "Pan" });
+
+    await deleteExpense(familyId, expense.id);
+
+    const remaining = await listExpenses(familyId);
+    expect(remaining.find((e) => e.id === expense.id)).toBeUndefined();
   });
 });
 

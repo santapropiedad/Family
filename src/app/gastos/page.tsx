@@ -30,6 +30,11 @@ export default function GastosPage() {
   const [categoryId, setCategoryId] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editCategoryId, setEditCategoryId] = useState("");
+
   async function loadAll() {
     const { from, to } = monthRange();
     const [e, c, s] = await Promise.all([
@@ -59,6 +64,31 @@ export default function GastosPage() {
     setAmount("");
     setDescription("");
     setCategoryId("");
+    loadAll();
+  }
+
+  function startEdit(e: Expense) {
+    setEditingId(e.id);
+    setEditAmount(String(Math.round(Number(e.amount))));
+    setEditDescription(e.description ?? e.merchant ?? "");
+    setEditCategoryId(e.category_id ?? "");
+  }
+
+  async function saveEdit(id: string) {
+    const value = Number(editAmount.replace(/[^\d]/g, ""));
+    if (!value) return;
+    await api.patch(`/api/expenses/${id}`, {
+      amount: value,
+      description: editDescription || null,
+      categoryId: editCategoryId || null,
+    });
+    setEditingId(null);
+    loadAll();
+  }
+
+  async function removeExpense(id: string) {
+    if (!confirm("¿Eliminar este gasto?")) return;
+    await api.delete(`/api/expenses/${id}`);
     loadAll();
   }
 
@@ -134,12 +164,70 @@ export default function GastosPage() {
         <div className="card divide-y">
           {!loading && expenses.length === 0 && <p className="text-sm text-muted p-4">Sin gastos registrados.</p>}
           {expenses.slice(0, 15).map((e) => (
-            <div key={e.id} className="flex items-center justify-between px-4 py-3">
-              <div>
-                <p className="text-sm">{e.description || e.merchant || "Gasto"}</p>
-                <p className="text-xs text-muted">{e.spent_at}</p>
-              </div>
-              <p className="text-sm font-semibold">{money(Number(e.amount))}</p>
+            <div key={e.id} className="px-4 py-3">
+              {editingId === e.id ? (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      value={editAmount}
+                      onChange={(ev) => setEditAmount(ev.target.value)}
+                      placeholder="Monto"
+                      inputMode="numeric"
+                      className="w-28 rounded-xl border px-3 py-2 text-sm bg-transparent"
+                    />
+                    <select
+                      value={editCategoryId}
+                      onChange={(ev) => setEditCategoryId(ev.target.value)}
+                      className="flex-1 rounded-xl border px-3 py-2 text-sm bg-transparent"
+                    >
+                      <option value="">Categoría</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.icon} {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <input
+                    value={editDescription}
+                    onChange={(ev) => setEditDescription(ev.target.value)}
+                    placeholder="Descripción"
+                    className="w-full rounded-xl border px-3 py-2 text-sm bg-transparent"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveEdit(e.id)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-primary text-white font-medium"
+                    >
+                      Guardar
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="text-xs px-3 py-1.5 text-muted">
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm truncate">{e.description || e.merchant || "Gasto"}</p>
+                    <p className="text-xs text-muted">{e.spent_at}</p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <p className="text-sm font-semibold">{money(Number(e.amount))}</p>
+                    <button onClick={() => startEdit(e)} className="text-muted" title="Editar" aria-label="Editar">
+                      ✎
+                    </button>
+                    <button
+                      onClick={() => removeExpense(e.id)}
+                      className="text-muted"
+                      title="Eliminar"
+                      aria-label="Eliminar"
+                    >
+                      🗑
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -28,8 +28,12 @@ function endOfMonth(d: Date): string {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
 }
 
+function assignedToMember(assignees: string[] | undefined, memberId?: string): boolean {
+  return !memberId || !assignees || assignees.length === 0 || assignees.includes(memberId);
+}
+
 /** Motor de inteligencia proactiva: detecta situaciones útiles sin ejecutar ninguna acción por sí solo. */
-export async function detectInsights(familyId: string): Promise<Insight[]> {
+export async function detectInsights(familyId: string, memberId?: string): Promise<Insight[]> {
   const family = await getFamily(familyId);
   const insights: Insight[] = [];
   if (!family.ai_proactive_enabled) return insights;
@@ -68,6 +72,7 @@ export async function detectInsights(familyId: string): Promise<Insight[]> {
   const pendingTasks = await listTasks(familyId, { status: "pending" });
   const today = now.toISOString().slice(0, 10);
   for (const task of pendingTasks) {
+    if (!assignedToMember(task.assignees, memberId)) continue;
     if (task.due_date && task.due_date < today) {
       const daysLate = Math.round(
         (new Date(today).getTime() - new Date(task.due_date).getTime()) / (1000 * 60 * 60 * 24)
@@ -142,17 +147,21 @@ function greetingForHour(hour: number): string {
   return "Buenas noches";
 }
 
-export async function buildTodaySummary(familyId: string): Promise<TodaySummary> {
+export async function buildTodaySummary(familyId: string, memberId?: string): Promise<TodaySummary> {
   const now = new Date();
-  const [tasks, events, completedTasks, insights] = await Promise.all([
+  const [allTasks, allEvents, allCompletedTasks, insights] = await Promise.all([
     listTasks(familyId, { status: "pending" }),
     listEvents(familyId, {
       from: now.toISOString(),
       to: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
     }),
     listTasks(familyId, { status: "completed" }),
-    detectInsights(familyId),
+    detectInsights(familyId, memberId),
   ]);
+
+  const tasks = allTasks.filter((t) => assignedToMember(t.assignees, memberId));
+  const events = allEvents.filter((e) => assignedToMember(e.assignees, memberId));
+  const completedTasks = allCompletedTasks.filter((t) => assignedToMember(t.assignees, memberId));
 
   const db = await getDb();
   const shoppingCount = await db.query<{ count: string }>(

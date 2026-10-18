@@ -42,11 +42,15 @@ export default function HoyPage() {
       ]);
       setSummary(summaryRes);
       setTasks(tasksRes.tasks);
-      setEvents(eventsRes.events);
+      setEvents(
+        eventsRes.events.filter(
+          (e) => !e.assignees || e.assignees.length === 0 || (session && e.assignees.includes(session.familyMemberId))
+        )
+      );
       setLoading(false);
     }
     load();
-  }, []);
+  }, [session]);
 
   if (loading || !summary) {
     return <p className="text-sm text-muted">Cargando tu día…</p>;

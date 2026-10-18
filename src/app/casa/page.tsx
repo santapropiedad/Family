@@ -15,6 +15,10 @@ export default function CasaPage() {
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [postponeFor, setPostponeFor] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editTime, setEditTime] = useState("");
 
   const canAssignOthers = session?.role === "admin" || session?.role === "adult";
 
@@ -57,6 +61,32 @@ export default function CasaPage() {
     const { dueDate, dueTime } = postponeDue(task, minutes);
     await api.patch(`/api/tasks/${task.id}`, { dueDate, dueTime });
     setPostponeFor(null);
+    loadAll();
+  }
+
+  function startEdit(task: Task) {
+    setEditingId(task.id);
+    setEditTitle(task.title);
+    setEditDate(task.due_date ?? "");
+    setEditTime(task.due_time ? task.due_time.slice(0, 5) : "");
+    setPostponeFor(null);
+  }
+
+  async function saveEdit(id: string) {
+    if (!editTitle.trim()) return;
+    await api.patch(`/api/tasks/${id}`, {
+      title: editTitle.trim(),
+      dueDate: editDate || null,
+      dueTime: editDate ? editTime || null : null,
+    });
+    setEditingId(null);
+    loadAll();
+  }
+
+  async function removeTask(id: string) {
+    if (!confirm("¿Eliminar esta tarea?")) return;
+    await api.delete(`/api/tasks/${id}`);
+    setEditingId(null);
     loadAll();
   }
 
@@ -117,53 +147,103 @@ export default function CasaPage() {
           </form>
           <div className="card divide-y">
             {tasks.length === 0 && <p className="text-sm text-muted p-4">No hay tareas todavía.</p>}
-            {tasks.map((t) => (
-              <div key={t.id} className="px-4 py-3">
-                <div className="flex items-center gap-3">
+            {tasks.map((t) =>
+              editingId === t.id ? (
+                <div key={t.id} className="px-4 py-3 space-y-2">
                   <input
-                    type="checkbox"
-                    checked={t.status === "completed"}
-                    onChange={() => toggleTask(t)}
-                    className="h-4 w-4"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    placeholder="Tarea"
+                    className="w-full rounded-xl border px-3 py-2 text-sm bg-transparent"
                   />
-                  <span className={`priority-dot ${t.priority}`} />
-                  <div className="flex-1">
-                    <p className={`text-sm ${t.status === "completed" ? "line-through text-muted" : ""}`}>{t.title}</p>
-                    {(t.assignees?.length ?? 0) > 0 && (
-                      <p className="text-xs text-muted">{t.assignees!.map(memberName).join(", ")}</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      value={editDate}
+                      onChange={(e) => setEditDate(e.target.value)}
+                      className="flex-1 rounded-xl border px-3 py-2 text-sm bg-transparent"
+                    />
+                    <input
+                      type="time"
+                      value={editTime}
+                      onChange={(e) => setEditTime(e.target.value)}
+                      className="w-28 rounded-xl border px-3 py-2 text-sm bg-transparent"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveEdit(t.id)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-primary text-white font-medium"
+                    >
+                      Guardar
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="text-xs px-3 py-1.5 text-muted">
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => removeTask(t.id)}
+                      className="text-xs px-3 py-1.5 text-priority-red ml-auto"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div key={t.id} className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={t.status === "completed"}
+                      onChange={() => toggleTask(t)}
+                      className="h-4 w-4"
+                    />
+                    <span className={`priority-dot ${t.priority}`} />
+                    <div className="flex-1">
+                      <p className={`text-sm ${t.status === "completed" ? "line-through text-muted" : ""}`}>
+                        {t.title}
+                      </p>
+                      {(t.assignees?.length ?? 0) > 0 && (
+                        <p className="text-xs text-muted">{t.assignees!.map(memberName).join(", ")}</p>
+                      )}
+                    </div>
+                    {t.due_date && (
+                      <span className="text-xs text-muted shrink-0">
+                        {t.due_date}
+                        {t.due_time && ` ${t.due_time.slice(0, 5)}`}
+                      </span>
+                    )}
+                    <button onClick={() => startEdit(t)} className="text-xs text-muted shrink-0" title="Editar">
+                      ✎
+                    </button>
+                    {t.status === "pending" && (
+                      <button
+                        onClick={() => setPostponeFor(postponeFor === t.id ? null : t.id)}
+                        className="text-xs text-muted shrink-0"
+                        title="Postergar"
+                      >
+                        ⏰
+                      </button>
                     )}
                   </div>
-                  {t.due_date && (
-                    <span className="text-xs text-muted shrink-0">
-                      {t.due_date}
-                      {t.due_time && ` ${t.due_time.slice(0, 5)}`}
-                    </span>
-                  )}
-                  {t.status === "pending" && (
-                    <button
-                      onClick={() => setPostponeFor(postponeFor === t.id ? null : t.id)}
-                      className="text-xs text-muted shrink-0"
-                      title="Postergar"
-                    >
-                      ⏰
-                    </button>
+                  {postponeFor === t.id && (
+                    <div className="flex gap-2 pt-2 pl-7">
+                      <button onClick={() => postpone(t, 15)} className="text-xs px-2 py-1 rounded-lg bg-border/60">
+                        +15 min
+                      </button>
+                      <button onClick={() => postpone(t, 60)} className="text-xs px-2 py-1 rounded-lg bg-border/60">
+                        +1 hora
+                      </button>
+                      <button
+                        onClick={() => postpone(t, 60 * 24)}
+                        className="text-xs px-2 py-1 rounded-lg bg-border/60"
+                      >
+                        +1 día
+                      </button>
+                    </div>
                   )}
                 </div>
-                {postponeFor === t.id && (
-                  <div className="flex gap-2 pt-2 pl-7">
-                    <button onClick={() => postpone(t, 15)} className="text-xs px-2 py-1 rounded-lg bg-border/60">
-                      +15 min
-                    </button>
-                    <button onClick={() => postpone(t, 60)} className="text-xs px-2 py-1 rounded-lg bg-border/60">
-                      +1 hora
-                    </button>
-                    <button onClick={() => postpone(t, 60 * 24)} className="text-xs px-2 py-1 rounded-lg bg-border/60">
-                      +1 día
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
+              )
+            )}
           </div>
         </div>
       )}

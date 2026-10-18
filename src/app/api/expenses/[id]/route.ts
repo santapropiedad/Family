@@ -1,8 +1,20 @@
 import type { NextRequest } from "next/server";
-import { handleRoute } from "@/lib/api";
+import { handleRoute, parseBody } from "@/lib/api";
 import { requireSession } from "@/lib/session";
 import { assertCapability } from "@/lib/permissions";
-import { deleteExpense } from "@/services/expenses";
+import { updateExpenseSchema } from "@/lib/validation";
+import { deleteExpense, updateExpense } from "@/services/expenses";
+
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  return handleRoute(async () => {
+    const session = await requireSession();
+    assertCapability(session.role, "finances:manage");
+    const { id } = await params;
+    const input = await parseBody(req, updateExpenseSchema);
+    const expense = await updateExpense(session.familyId, id, input);
+    return { expense };
+  });
+}
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {

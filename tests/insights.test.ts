@@ -47,6 +47,20 @@ describe("inteligencia proactiva", () => {
     expect(text.length).toBeGreaterThan(0);
   });
 
+  it("el resumen de 'Hoy' filtrado por integrante solo muestra tareas y eventos asignados a esa persona", async () => {
+    const { familyId, adultId, childId } = await createTestFamily("filtered");
+    await createTask(familyId, { title: "Tarea del adulto", assigneeIds: [adultId] });
+    await createTask(familyId, { title: "Tarea del niño", assigneeIds: [childId] });
+    await createTask(familyId, { title: "Tarea sin asignar" });
+
+    const adultSummary = await buildTodaySummary(familyId, adultId);
+    const adultTitles = adultSummary.priorities.map((p) => p.title);
+    expect(adultTitles).toContain("Tarea del adulto");
+    expect(adultTitles).toContain("Tarea sin asignar");
+    expect(adultTitles).not.toContain("Tarea del niño");
+    expect(adultSummary.pendingTasksCount).toBe(2);
+  });
+
   it("no genera insights si la inteligencia proactiva está desactivada", async () => {
     const { familyId } = await createTestFamily("disabled");
     const { getDb } = await import("@/db/client");

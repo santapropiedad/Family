@@ -107,18 +107,18 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
 
   return (
     <div className="space-y-5">
-      <header className="flex items-center gap-3">
+      <header className="flex items-center gap-2.5">
         <div
-          className="w-12 h-12 rounded-full flex items-center justify-center text-2xl shrink-0"
+          className="w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-xl sm:text-2xl shrink-0"
           style={{ backgroundColor: (member?.color ?? "#6366f1") + "33" }}
         >
           {member?.avatar_emoji ?? "🙂"}
         </div>
-        <div>
-          <h1 className="text-2xl font-bold">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold truncate">
             {greetingForHour(new Date().getHours())}, {member?.name ?? "..."}
           </h1>
-          <p className="text-sm text-muted capitalize">
+          <p className="text-xs sm:text-sm text-muted capitalize">
             {new Date().toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long" })}
           </p>
         </div>
@@ -155,19 +155,19 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
             <div className="card divide-y">
               {tasks.length === 0 && <p className="text-sm text-muted p-4">No hay tareas pendientes.</p>}
               {tasks.map((t) => (
-                <div key={t.id} className="px-4 py-3">
-                  <div className="flex items-center gap-3">
+                <div key={t.id} className="px-3 py-2.5">
+                  <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
                       checked={t.status === "completed"}
                       onChange={() => toggleTask(t)}
-                      className="h-4 w-4"
+                      className="h-4 w-4 shrink-0"
                     />
-                    <span className={`priority-dot ${t.priority}`} />
-                    <p className="flex-1 text-sm">{t.title}</p>
+                    <span className={`priority-dot ${t.priority} shrink-0`} />
+                    <p className="flex-1 min-w-0 text-sm truncate">{t.title}</p>
                     {t.due_date && (
                       <span className="text-xs text-muted shrink-0">
-                        {t.due_date}
+                        {t.due_date.slice(5)}
                         {t.due_time && ` ${t.due_time.slice(0, 5)}`}
                       </span>
                     )}
@@ -202,9 +202,9 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
             <div className="card divide-y">
               {events.length === 0 && <p className="text-sm text-muted p-4">No hay eventos próximos.</p>}
               {events.map((e) => (
-                <div key={e.id} className="flex items-center justify-between px-4 py-3">
-                  <span className="text-sm">{e.title}</span>
-                  <span className="text-xs text-muted capitalize">{formatEventTime(e.start_at)}</span>
+                <div key={e.id} className="flex items-center justify-between gap-2 px-3 py-2.5">
+                  <span className="text-sm truncate min-w-0">{e.title}</span>
+                  <span className="text-xs text-muted capitalize shrink-0">{formatEventTime(e.start_at)}</span>
                 </div>
               ))}
             </div>
@@ -226,29 +226,31 @@ export default function IntegranteClient({ memberId }: { memberId: string }) {
 
           <section>
             <h2 className="text-sm font-semibold text-muted mb-2">AGREGAR TAREA</h2>
-            <form onSubmit={addTask} className="card p-4 space-y-2">
+            <form onSubmit={addTask} className="card p-3 space-y-2">
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={`Nueva tarea para ${member?.name ?? ""}…`}
+                className="w-full rounded-xl border px-3 py-2 text-sm bg-transparent"
+              />
               <div className="flex gap-2">
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder={`Nueva tarea para ${member?.name ?? ""}…`}
-                  className="flex-1 rounded-xl border px-3 py-2 text-sm bg-transparent"
-                />
                 <input
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="rounded-xl border px-3 py-2 text-sm bg-transparent"
+                  className="flex-1 min-w-0 rounded-xl border px-3 py-2 text-sm bg-transparent"
                 />
                 <input
                   type="time"
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
                   title="Hora de vencimiento (para avisos 15 min antes y 10 min después)"
-                  className="rounded-xl border px-3 py-2 text-sm bg-transparent"
+                  className="w-24 shrink-0 rounded-xl border px-3 py-2 text-sm bg-transparent"
                 />
               </div>
-              <button className="rounded-xl bg-primary text-white px-4 py-2 text-sm font-medium">Agregar</button>
+              <button className="w-full rounded-xl bg-primary text-white px-4 py-2 text-sm font-medium">
+                Agregar
+              </button>
             </form>
           </section>
         </>
