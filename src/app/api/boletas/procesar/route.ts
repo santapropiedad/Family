@@ -22,8 +22,8 @@ export async function POST(req: NextRequest) {
       );
     }
     const { image } = await parseBody(req, procesarBoletaSchema);
-    const parsed = await processReceiptImage(image);
-    const possibleDuplicate = await findPossibleDuplicateExpense(session.familyId, parsed.spentAt, parsed.total);
-    return { parsed, possibleDuplicate };
+    const { parsed, tabscannerDuplicate } = await processReceiptImage(image);
+    const sameDateAmountExists = await findPossibleDuplicateExpense(session.familyId, parsed.spentAt, parsed.total);
+    return { parsed, possibleDuplicate: tabscannerDuplicate || sameDateAmountExists };
   });
 }

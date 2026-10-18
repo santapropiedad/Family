@@ -1,12 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { getDb } from "@/db/client";
 import { AppError } from "@/lib/errors";
 import { createExpense, findCategoryByName } from "@/services/expenses";
 import { upsertInventoryOnPurchase } from "@/services/shopping";
 import type { Expense, InventoryItem } from "@/types/domain";
 
-const TABSCANNER_PROCESS_URL = "https://api.tabscanner.com/api/2/process";
-const TABSCANNER_RESULT_URL = "https://api.tabscanner.com/api/result";
-const POLL_INTERVAL_MS = 1500;
+// API v2 de Tabscanner (api3.tabscanner.com) — la versión anterior (api.tabscanner.com/api/2/...)
+// quedó obsoleta; verificado contra la documentación oficial vigente antes de implementar esto.
+const TABSCANNER_RECEIPTS_URL = "https://api3.tabscanner.com/v2/receipts";
+const DEFAULT_POLL_INTERVAL_MS = 1500;
 const POLL_TIMEOUT_MS = 55_000; // bajo el límite de 60s de las funciones de Vercel en el plan gratuito
 
 export function isTabscannerConfigured(): boolean {
@@ -25,8 +27,18 @@ function tabscannerApiKey(): string {
   return key;
 }
 
+function tabscannerHeaders(): Record<string, string> {
+  return { Authorization: `Bearer ${tabscannerApiKey()}` };
+}
+
+interface SubmitReceiptResult {
+  token: string;
+  /** Tabscanner detectó que esta misma imagen (por huella visual) ya se había subido antes. */
+  duplicate: boolean;
+}
+
 /** Sube la foto de la boleta a Tabscanner y devuelve el token para consultar el resultado. */
-async function submitReceiptImage(imageDataUrl: string): Promise<string> {
+async function submitReceiptImage(imageDataUrl: string): Promise<SubmitReceiptResult> {
   const match = imageDataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
   if (!match) {
     throw new AppError("La imagen de la boleta no tiene un formato válido.", 400, "invalid_image");
@@ -36,18 +48,18 @@ async function submitReceiptImage(imageDataUrl: string): Promise<string> {
 
   const form = new FormData();
   form.append("file", new Blob([buffer], { type: mimeType }), "boleta.jpg");
-  form.append("region", "CL");
+  form.append("region", "cl");
 
-  const res = await fetch(TABSCANNER_PROCESS_URL, {
+  const res = await fetch(TABSCANNER_RECEIPTS_URL, {
     method: "POST",
-    headers: { apikey: tabscannerApiKey() },
+    headers: { ...tabscannerHeaders(), "Idempotency-Key": randomUUID() },
     body: form,
   });
   const body = await res.json().catch(() => null);
   if (!res.ok || !body?.token) {
     throw new AppError("No pudimos enviar la boleta a procesar. Inténtalo nuevamente.", 502, "tabscanner_submit_failed");
   }
-  return body.token as string;
+  return { token: body.token as string, duplicate: Boolean(body.duplicate) };
 }
 
 interface TabscannerLineItem {
@@ -65,23 +77,27 @@ interface TabscannerResult {
   dateISO?: string | null;
   establishment?: string | null;
   lineItems?: TabscannerLineItem[] | null;
-  customFields?: Record<string, string> | null;
 }
 
-/** Consulta el resultado repetidamente (short polling, como indica la API) hasta que esté listo. */
+/** Consulta el resultado repetidamente (como indica la API) hasta que quede en estado "done". */
 async function pollReceiptResult(token: string): Promise<TabscannerResult> {
-  const apikey = tabscannerApiKey();
+  const headers = tabscannerHeaders();
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    const res = await fetch(`${TABSCANNER_RESULT_URL}/${token}`, { headers: { apikey } });
+    const res = await fetch(`${TABSCANNER_RECEIPTS_URL}/${token}`, { headers });
     const body = await res.json().catch(() => null);
-    if (body?.code === 202 && body?.success && body?.result) {
+    if (body?.status === "done" && body?.result) {
       return body.result as TabscannerResult;
     }
-    if (body && body.code !== 301) {
+    if (body?.status === "failed") {
       throw new AppError("No pudimos leer la boleta. Prueba con una foto más clara.", 502, "tabscanner_failed");
     }
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    if (body?.status !== "pending") {
+      throw new AppError("No pudimos leer la boleta. Prueba con una foto más clara.", 502, "tabscanner_failed");
+    }
+    const retryAfterSeconds = Number(res.headers.get("Retry-After"));
+    const waitMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds * 1000 : DEFAULT_POLL_INTERVAL_MS;
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
   throw new AppError("La boleta está tardando demasiado en procesarse. Inténtalo nuevamente.", 504, "tabscanner_timeout");
 }
@@ -130,16 +146,24 @@ function normalizeReceiptResult(raw: TabscannerResult): ParsedReceipt {
     total: Math.round(raw.total * 100) / 100,
     spentAt,
     merchant: raw.establishment?.trim() || null,
-    receiptNumber: raw.customFields?.ReceiptNumber?.trim() || null,
+    // La API v2 de Tabscanner no entrega un N° de boleta estructurado; queda null salvo que el
+    // usuario lo escriba a mano en la pantalla de confirmación.
+    receiptNumber: null,
     items,
   };
 }
 
+export interface ProcessReceiptResult {
+  parsed: ParsedReceipt;
+  /** Tabscanner reconoció esta misma foto (por huella visual) como ya subida antes. */
+  tabscannerDuplicate: boolean;
+}
+
 /** Procesa una foto de boleta de principio a fin: la sube, espera el resultado y lo normaliza. */
-export async function processReceiptImage(imageDataUrl: string): Promise<ParsedReceipt> {
-  const token = await submitReceiptImage(imageDataUrl);
+export async function processReceiptImage(imageDataUrl: string): Promise<ProcessReceiptResult> {
+  const { token, duplicate } = await submitReceiptImage(imageDataUrl);
   const raw = await pollReceiptResult(token);
-  return normalizeReceiptResult(raw);
+  return { parsed: normalizeReceiptResult(raw), tabscannerDuplicate: duplicate };
 }
 
 /**
