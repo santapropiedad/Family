@@ -8,7 +8,7 @@ export interface VoiceProvider {
   isSupported(): boolean;
   startListening(onResult: (text: string, isFinal: boolean) => void, onEnd: () => void, onError: (message: string) => void): void;
   stopListening(): void;
-  speak(text: string): void;
+  speak(text: string): void | Promise<void>;
   stopSpeaking(): void;
   /**
    * Escucha en segundo plano, de forma continua y gratuita (sin servidor), esperando
@@ -32,6 +32,31 @@ function normalize(text: string): string {
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .trim();
+}
+
+/**
+ * Las voces del navegador se cargan de forma asíncrona (a veces después de que ya se intentó
+ * hablar), así que la primera llamada espera al evento `voiceschanged` en vez de seguir con una
+ * lista vacía. Prefiere una voz en español de Chile y, si no hay, cualquier español disponible.
+ */
+async function pickSpanishVoice(): Promise<SpeechSynthesisVoice | null> {
+  const synth = window.speechSynthesis;
+  let voices = synth.getVoices();
+  if (voices.length === 0) {
+    voices = await new Promise<SpeechSynthesisVoice[]>((resolve) => {
+      const timeout = setTimeout(() => resolve(synth.getVoices()), 1000);
+      synth.onvoiceschanged = () => {
+        clearTimeout(timeout);
+        resolve(synth.getVoices());
+      };
+    });
+  }
+  if (voices.length === 0) return null;
+  return (
+    voices.find((v) => v.lang.toLowerCase() === "es-cl") ??
+    voices.find((v) => v.lang.toLowerCase().startsWith("es")) ??
+    voices[0]
+  );
 }
 
 type SpeechRecognitionLike = {
@@ -105,11 +130,21 @@ class WebSpeechProvider implements VoiceProvider {
     this.recognition?.stop();
   }
 
-  speak(text: string): void {
+  async speak(text: string): Promise<void> {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const voice = await pickSpanishVoice();
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "es-CL";
+    // Si no se asigna una voz explícita, Chrome/Edge en Windows suelen encolar el audio como
+    // "speaking" sin emitir ningún sonido ni error cuando no tienen instalada la variante exacta
+    // del `lang` pedido (p.ej. piden "es-CL" pero solo tienen "es-MX"). Asignar la voz a mano
+    // evita ese silencio fantasma.
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+    } else {
+      utterance.lang = "es-CL";
+    }
     utterance.rate = 1;
     window.speechSynthesis.speak(utterance);
   }
