@@ -88,6 +88,9 @@ class WebSpeechProvider implements VoiceProvider {
   private wakeActive = false;
   private wakeRestartTimer: ReturnType<typeof setTimeout> | null = null;
   private wakeOnStatusChange: ((listening: boolean) => void) | null = null;
+  private wakeOnError: ((message: string) => void) | null = null;
+  private wakeSessionStartedAt = 0;
+  private wakeQuickEndStreak = 0;
 
   isSupported(): boolean {
     return getSpeechRecognitionCtor() !== null;
@@ -170,6 +173,8 @@ class WebSpeechProvider implements VoiceProvider {
     }
     this.wakeActive = true;
     this.wakeOnStatusChange = onStatusChange;
+    this.wakeOnError = onError;
+    this.wakeQuickEndStreak = 0;
 
     const launch = () => {
       if (!this.wakeActive) return;
@@ -198,7 +203,20 @@ class WebSpeechProvider implements VoiceProvider {
           this.wakeOnStatusChange?.(false);
           return;
         }
-        // El navegador corta las sesiones "continuous" tras un silencio; se reinicia sola.
+        // Algunos celulares (sobre todo Android) cortan una sesión "continuous" casi al
+        // instante en vez de mantenerla escuchando, y cada reinicio dispara el sonido del
+        // sistema — sin esto, el celular queda pitando sin parar sin escuchar nunca de verdad.
+        // Si pasa varias veces seguidas, dejamos de insistir en vez de pitar para siempre.
+        const lastedMs = Date.now() - this.wakeSessionStartedAt;
+        this.wakeQuickEndStreak = lastedMs < 2000 ? this.wakeQuickEndStreak + 1 : 0;
+        if (this.wakeQuickEndStreak >= 3) {
+          this.wakeActive = false;
+          this.wakeOnStatusChange?.(false);
+          this.wakeOnError?.(
+            "Manos libres no funciona de forma confiable en este celular/navegador — se corta solo apenas lo activa. Usa el botón del micrófono para hablarme en vez de 'Hey Familia'."
+          );
+          return;
+        }
         this.wakeRestartTimer = setTimeout(launch, 250);
       };
       recognition.onerror = (event: unknown) => {
@@ -211,6 +229,7 @@ class WebSpeechProvider implements VoiceProvider {
       };
       this.wakeRecognition = recognition;
       try {
+        this.wakeSessionStartedAt = Date.now();
         recognition.start();
         onStatusChange(true);
       } catch {
