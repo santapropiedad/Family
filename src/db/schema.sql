@@ -214,6 +214,13 @@ CREATE TABLE IF NOT EXISTS expenses (
 CREATE INDEX IF NOT EXISTS idx_expenses_family ON expenses(family_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_spent_at ON expenses(spent_at);
 CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category_id);
+-- N° de boleta/referencia (si el lector de boletas lo detecta) y origen legible ("Lector de boletas",
+-- distinto de `source`, que sólo distingue manual/ia). Único por familia cuando hay número de boleta,
+-- para no registrar la misma boleta dos veces.
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS receipt_number TEXT;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS origin TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_receipt_number
+  ON expenses(family_id, receipt_number) WHERE receipt_number IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS budgets (
   id UUID PRIMARY KEY,

@@ -16,16 +16,39 @@ const DEFAULT_CATEGORIES: Array<{ name: string; icon: string; color: string }> =
   { name: "Compras", icon: "🛍️", color: "#f97316" },
   { name: "Mascotas", icon: "🐾", color: "#84cc16" },
   { name: "Otros", icon: "📦", color: "#78716c" },
+  { name: "Supermercado", icon: "🏪", color: "#f59e0b" },
+  { name: "Farmacia", icon: "💊", color: "#22c55e" },
+  { name: "Ropa", icon: "👕", color: "#db2777" },
+  { name: "Útiles Escolares", icon: "🎒", color: "#3b82f6" },
+  { name: "Feria", icon: "🥬", color: "#65a30d" },
+  { name: "Luz", icon: "⚡", color: "#eab308" },
+  { name: "Agua", icon: "💧", color: "#06b6d4" },
 ];
 
+/** Inserta las categorías por defecto que a esta familia todavía le falten (nunca duplica por nombre). */
 export async function seedDefaultCategories(familyId: string): Promise<void> {
   const db = await getDb();
+  const existing = await db.query<{ name: string }>(
+    `SELECT name FROM expense_categories WHERE family_id = $1`,
+    [familyId]
+  );
+  const existingNames = new Set(existing.rows.map((r) => r.name.toLowerCase()));
   for (const cat of DEFAULT_CATEGORIES) {
+    if (existingNames.has(cat.name.toLowerCase())) continue;
     await db.query(
       `INSERT INTO expense_categories (id, family_id, name, icon, color, is_default)
        VALUES ($1, $2, $3, $4, $5, TRUE)`,
       [newId(), familyId, cat.name, cat.icon, cat.color]
     );
+  }
+}
+
+/** Backfill: agrega a TODAS las familias ya existentes las categorías por defecto que les falten. */
+export async function ensureDefaultCategoriesForAllFamilies(): Promise<void> {
+  const db = await getDb();
+  const families = await db.query<{ id: string }>(`SELECT id FROM families`);
+  for (const family of families.rows) {
+    await seedDefaultCategories(family.id);
   }
 }
 

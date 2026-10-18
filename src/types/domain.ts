@@ -126,6 +126,8 @@ export interface Expense {
   description: string | null;
   is_recurring: boolean;
   receipt_url: string | null;
+  receipt_number: string | null;
+  origin: string | null;
   source: Source;
   created_by: string | null;
   created_at: string;

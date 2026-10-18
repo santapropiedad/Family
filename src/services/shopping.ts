@@ -1,4 +1,4 @@
-import { getDb } from "@/db/client";
+import { getDb, type Db } from "@/db/client";
 import { newId } from "@/lib/ids";
 import { NotFoundError } from "@/lib/errors";
 import type { InventoryItem, Priority, ShoppingItem, ShoppingList, Source } from "@/types/domain";
@@ -130,8 +130,12 @@ export async function listInventory(familyId: string): Promise<InventoryItem[]> 
   return result.rows;
 }
 
-export async function findInventoryItemByName(familyId: string, name: string): Promise<InventoryItem | null> {
-  const db = await getDb();
+export async function findInventoryItemByName(
+  familyId: string,
+  name: string,
+  dbOverride?: Db
+): Promise<InventoryItem | null> {
+  const db = dbOverride ?? (await getDb());
   const result = await db.query<InventoryItem>(
     "SELECT * FROM inventory_items WHERE family_id = $1 AND lower(name) = lower($2)",
     [familyId, name]
@@ -148,10 +152,11 @@ export async function upsertInventoryOnPurchase(
     price?: number | null;
     categoryId?: string | null;
     store?: string | null;
-  }
+  },
+  dbOverride?: Db
 ): Promise<InventoryItem> {
-  const db = await getDb();
-  const existing = await findInventoryItemByName(familyId, name);
+  const db = dbOverride ?? (await getDb());
+  const existing = await findInventoryItemByName(familyId, name, db);
   const today = new Date().toISOString().slice(0, 10);
 
   if (!existing) {

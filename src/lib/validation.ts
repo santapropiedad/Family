@@ -150,6 +150,33 @@ export const createBillSchema = z.object({
   notes: z.string().trim().max(1000).nullable().optional(),
 });
 
+export const procesarBoletaSchema = z.object({
+  image: z
+    .string()
+    .trim()
+    .min(100)
+    .max(8_000_000)
+    .regex(/^data:image\/[a-zA-Z+]+;base64,/, "La imagen debe venir en formato data URL."),
+});
+
+export const confirmarBoletaSchema = z.object({
+  total: z.number().positive().max(100_000_000),
+  spentAt: z.string().trim().max(10),
+  merchant: z.string().trim().max(160).nullable().optional(),
+  receiptNumber: z.string().trim().max(80).nullable().optional(),
+  items: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(160),
+        qty: z.number().positive().max(10000),
+        unit: z.enum(["unidades", "kilos", "litros"]),
+        unitPrice: z.number().nonnegative().max(100_000_000).nullable().optional(),
+        lineTotal: z.number().nonnegative().max(100_000_000).nullable().optional(),
+      })
+    )
+    .max(100),
+});
+
 export const chatMessageSchema = z.object({
   text: z.string().trim().min(1).max(2000),
 });

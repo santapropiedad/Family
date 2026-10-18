@@ -1,4 +1,4 @@
-import { getDb } from "@/db/client";
+import { getDb, type Db } from "@/db/client";
 import { newId } from "@/lib/ids";
 import { NotFoundError } from "@/lib/errors";
 import type { Budget, Expense, ExpenseCategory, Source } from "@/types/domain";
@@ -12,8 +12,12 @@ export async function listCategories(familyId: string): Promise<ExpenseCategory[
   return result.rows;
 }
 
-export async function findCategoryByName(familyId: string, name: string): Promise<ExpenseCategory | null> {
-  const db = await getDb();
+export async function findCategoryByName(
+  familyId: string,
+  name: string,
+  dbOverride?: Db
+): Promise<ExpenseCategory | null> {
+  const db = dbOverride ?? (await getDb());
   const result = await db.query<ExpenseCategory>(
     `SELECT * FROM expense_categories WHERE (family_id = $1 OR family_id IS NULL) AND lower(name) = lower($2) LIMIT 1`,
     [familyId, name]
@@ -76,17 +80,23 @@ export interface CreateExpenseInput {
   description?: string | null;
   isRecurring?: boolean;
   receiptUrl?: string | null;
+  receiptNumber?: string | null;
+  origin?: string | null;
   source?: Source;
   createdBy?: string | null;
 }
 
-export async function createExpense(familyId: string, input: CreateExpenseInput): Promise<Expense> {
-  const db = await getDb();
+export async function createExpense(
+  familyId: string,
+  input: CreateExpenseInput,
+  dbOverride?: Db
+): Promise<Expense> {
+  const db = dbOverride ?? (await getDb());
   const id = newId();
   const result = await db.query<Expense>(
     `INSERT INTO expenses
-       (id, family_id, amount, category_id, subcategory, family_member_id, spent_at, merchant, payment_method, description, is_recurring, receipt_url, source, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, CURRENT_DATE), $8, $9, $10, $11, $12, $13, $14)
+       (id, family_id, amount, category_id, subcategory, family_member_id, spent_at, merchant, payment_method, description, is_recurring, receipt_url, receipt_number, origin, source, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, CURRENT_DATE), $8, $9, $10, $11, $12, $13, $14, $15, $16)
      RETURNING *`,
     [
       id,
@@ -101,6 +111,8 @@ export async function createExpense(familyId: string, input: CreateExpenseInput)
       input.description ?? null,
       input.isRecurring ?? false,
       input.receiptUrl ?? null,
+      input.receiptNumber ?? null,
+      input.origin ?? null,
       input.source ?? "manual",
       input.createdBy ?? null,
     ]

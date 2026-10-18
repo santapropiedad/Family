@@ -26,6 +26,12 @@ export interface Db {
   /** Runs one or more statements with no parameters (simple query protocol). Used for migrations. */
   exec(sql: string): Promise<void>;
   close(): Promise<void>;
+  /**
+   * Runs `fn` inside a BEGIN/COMMIT block (ROLLBACK on throw), passing a `Db` scoped to that
+   * single connection/transaction. Used where several writes must succeed or fail together
+   * (e.g. saving a receipt-scan expense and its inventory updates atomically).
+   */
+  transaction<T>(fn: (tx: Db) => Promise<T>): Promise<T>;
 }
 
 let dbInstance: Db | null = null;
@@ -50,6 +56,24 @@ async function createPgliteDb(): Promise<Db> {
     async close() {
       await client.close();
     },
+    async transaction<T>(fn: (tx: Db) => Promise<T>) {
+      return client.transaction(async (tx) => {
+        const txDb: Db = {
+          async query<T2>(sql: string, params: unknown[] = []) {
+            const result = await tx.query<T2>(sql, params as never[], { parsers });
+            return { rows: result.rows as T2[], rowCount: result.affectedRows ?? result.rows.length };
+          },
+          async exec(sql: string) {
+            await tx.exec(sql, { parsers });
+          },
+          async close() {},
+          async transaction() {
+            throw new Error("No se permiten transacciones anidadas.");
+          },
+        };
+        return fn(txDb);
+      });
+    },
   };
 }
 
@@ -69,6 +93,33 @@ async function createPgDb(connectionString: string): Promise<Db> {
     },
     async close() {
       await pool.end();
+    },
+    async transaction<T>(fn: (tx: Db) => Promise<T>) {
+      const client = await pool.connect();
+      const txDb: Db = {
+        async query<T2>(sql: string, params: unknown[] = []) {
+          const result = await client.query(sql, params);
+          return { rows: result.rows as T2[], rowCount: result.rowCount ?? 0 };
+        },
+        async exec(sql: string) {
+          await client.query(sql);
+        },
+        async close() {},
+        async transaction() {
+          throw new Error("No se permiten transacciones anidadas.");
+        },
+      };
+      try {
+        await client.query("BEGIN");
+        const result = await fn(txDb);
+        await client.query("COMMIT");
+        return result;
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
     },
   };
 }

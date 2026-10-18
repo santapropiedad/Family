@@ -1,8 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api-client";
 import type { Expense, ExpenseCategory } from "@/types/domain";
+
+type InventoryUnit = "unidades" | "kilos" | "litros";
+
+interface ScannedItem {
+  name: string;
+  qty: number;
+  unit: InventoryUnit;
+  unitPrice: number | null;
+  lineTotal: number | null;
+}
+
+interface ScannedReceipt {
+  total: number;
+  spentAt: string;
+  merchant: string | null;
+  receiptNumber: string | null;
+  items: ScannedItem[];
+}
+
+const UNIT_LABEL: Record<InventoryUnit, string> = { unidades: "Unidades", kilos: "Kilos", litros: "Litros" };
+
+/** Redimensiona y comprime la foto en el navegador antes de subirla (boletas pueden pesar varios MB). */
+async function compressReceiptImage(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const maxSide = 1600;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("No se pudo procesar la imagen.");
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.82);
+}
 
 interface SummaryResponse {
   total: number;
@@ -34,6 +68,13 @@ export default function GastosPage() {
   const [editAmount, setEditAmount] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editCategoryId, setEditCategoryId] = useState("");
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [savingScan, setSavingScan] = useState(false);
+  const [preview, setPreview] = useState<ScannedReceipt | null>(null);
+  const [possibleDuplicate, setPossibleDuplicate] = useState(false);
 
   async function loadAll() {
     const { from, to } = monthRange();
@@ -90,6 +131,59 @@ export default function GastosPage() {
     if (!confirm("¿Eliminar este gasto?")) return;
     await api.delete(`/api/expenses/${id}`);
     loadAll();
+  }
+
+  async function handleReceiptFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setScanError(null);
+    setScanning(true);
+    try {
+      const image = await compressReceiptImage(file);
+      const res = await api.post<{ parsed: ScannedReceipt; possibleDuplicate: boolean }>("/api/boletas/procesar", {
+        image,
+      });
+      setPreview(res.parsed);
+      setPossibleDuplicate(res.possibleDuplicate);
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "No pudimos leer la boleta.");
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function updatePreviewItem(index: number, patch: Partial<ScannedItem>) {
+    setPreview((prev) => {
+      if (!prev) return prev;
+      const items = prev.items.map((item, i) => (i === index ? { ...item, ...patch } : item));
+      return { ...prev, items };
+    });
+  }
+
+  function removePreviewItem(index: number) {
+    setPreview((prev) => (prev ? { ...prev, items: prev.items.filter((_, i) => i !== index) } : prev));
+  }
+
+  function cancelScan() {
+    setPreview(null);
+    setPossibleDuplicate(false);
+    setScanError(null);
+  }
+
+  async function confirmScan() {
+    if (!preview) return;
+    setSavingScan(true);
+    setScanError(null);
+    try {
+      await api.post("/api/boletas/confirmar", preview);
+      cancelScan();
+      loadAll();
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : "No pudimos guardar la boleta.");
+    } finally {
+      setSavingScan(false);
+    }
   }
 
   return (
@@ -158,6 +252,116 @@ export default function GastosPage() {
           Registrar gasto
         </button>
       </form>
+
+      <div className="card p-4 space-y-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleReceiptFile}
+          className="hidden"
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={scanning}
+          className="w-full rounded-xl border-2 border-dashed border-primary/40 text-primary py-2.5 text-sm font-semibold disabled:opacity-60"
+        >
+          {scanning ? "Leyendo boleta…" : "📷 Leer boleta del supermercado"}
+        </button>
+        {scanError && <p className="text-xs text-priority-red">{scanError}</p>}
+      </div>
+
+      {preview && (
+        <div className="card p-4 space-y-3">
+          <h2 className="text-sm font-semibold">Revisa la boleta antes de guardar</h2>
+          {possibleDuplicate && (
+            <p className="text-xs text-priority-red bg-priority-red/10 rounded-lg px-2 py-1.5">
+              ⚠️ Ya existe un gasto con la misma fecha y monto — revisa que no sea la misma boleta.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="text-xs text-muted">Total</label>
+              <input
+                type="number"
+                value={preview.total}
+                onChange={(e) => setPreview({ ...preview, total: Number(e.target.value) || 0 })}
+                className="w-full rounded-xl border px-3 py-2 text-sm bg-transparent"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs text-muted">Fecha</label>
+              <input
+                type="date"
+                value={preview.spentAt}
+                onChange={(e) => setPreview({ ...preview, spentAt: e.target.value })}
+                className="w-full rounded-xl border px-3 py-2 text-sm bg-transparent"
+              />
+            </div>
+          </div>
+          <input
+            value={preview.merchant ?? ""}
+            onChange={(e) => setPreview({ ...preview, merchant: e.target.value || null })}
+            placeholder="Tienda (opcional)"
+            className="w-full rounded-xl border px-3 py-2 text-sm bg-transparent"
+          />
+
+          {preview.items.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted">Productos leídos ({preview.items.length})</p>
+              <div className="divide-y rounded-xl border">
+                {preview.items.map((item, i) => (
+                  <div key={i} className="p-2.5 space-y-1.5">
+                    <div className="flex gap-2 items-center">
+                      <input
+                        value={item.name}
+                        onChange={(e) => updatePreviewItem(i, { name: e.target.value })}
+                        className="flex-1 min-w-0 rounded-lg border px-2 py-1.5 text-sm bg-transparent"
+                      />
+                      <button onClick={() => removePreviewItem(i)} className="text-muted shrink-0" title="Quitar">
+                        🗑
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={item.qty}
+                        onChange={(e) => updatePreviewItem(i, { qty: Number(e.target.value) || 1 })}
+                        className="w-20 rounded-lg border px-2 py-1.5 text-sm bg-transparent"
+                      />
+                      <select
+                        value={item.unit}
+                        onChange={(e) => updatePreviewItem(i, { unit: e.target.value as InventoryUnit })}
+                        className="flex-1 rounded-lg border px-2 py-1.5 text-sm bg-transparent"
+                      >
+                        {(Object.keys(UNIT_LABEL) as InventoryUnit[]).map((u) => (
+                          <option key={u} value={u}>
+                            {UNIT_LABEL[u]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={confirmScan}
+              disabled={savingScan}
+              className="flex-1 rounded-xl bg-primary text-white py-2.5 text-sm font-semibold disabled:opacity-60"
+            >
+              {savingScan ? "Guardando…" : "Guardar gasto y actualizar inventario"}
+            </button>
+            <button onClick={cancelScan} className="px-4 text-sm text-muted">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       <section>
         <h2 className="text-sm font-semibold text-muted mb-2">RECIENTES</h2>
