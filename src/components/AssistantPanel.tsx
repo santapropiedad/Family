@@ -177,7 +177,7 @@ export default function AssistantPanel({
         className={
           inline
             ? "card flex-1 flex flex-col overflow-hidden"
-            : "card w-full md:max-w-lg md:mx-4 h-[85vh] md:h-[70vh] flex flex-col rounded-t-3xl md:rounded-3xl overflow-hidden"
+            : "card w-full md:max-w-lg md:mx-4 h-[85dvh] md:h-[70dvh] flex flex-col rounded-t-3xl md:rounded-3xl overflow-hidden"
         }
       >
         <header className="flex items-center justify-between px-4 py-3 border-b">
@@ -259,7 +259,7 @@ export default function AssistantPanel({
             e.preventDefault();
             send(input);
           }}
-          className="flex items-center gap-2 border-t px-3 py-2.5"
+          className="shrink-0 flex items-center gap-2 border-t px-3 py-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))]"
         >
           <button
             type="button"
