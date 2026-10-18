@@ -17,6 +17,18 @@ const TYPE_CONFIG: Record<EntryType, { label: string; icon: string; kind: "event
   tarea: { label: "Tarea", icon: "✅", kind: "task" },
 };
 
+/**
+ * `new Date("2026-10-18")` (sin hora) se interpreta como medianoche UTC — al mostrarla en hora de
+ * Chile (UTC-3/-4) retrocede al día anterior. Las fechas de tareas (`due_date`) vienen así, sin
+ * hora; las de eventos (`start_at`) ya traen hora y no tienen este problema.
+ */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+function formatEntryDate(date: string): string {
+  const d = DATE_ONLY.test(date) ? new Date(`${date}T00:00:00`) : new Date(date);
+  return d.toLocaleDateString("es-CL", { day: "numeric", month: "short" });
+}
+
 interface Entry {
   id: string;
   kind: "event" | "task";
@@ -215,9 +227,7 @@ export default function HijosClient() {
                     <div className="flex-1">
                       <p className={`text-sm ${entry.done ? "line-through text-muted" : ""}`}>{entry.title}</p>
                       <p className="text-xs text-muted">
-                        {entry.date
-                          ? new Date(entry.date).toLocaleDateString("es-CL", { day: "numeric", month: "short" })
-                          : "Sin fecha"}
+                        {entry.date ? formatEntryDate(entry.date) : "Sin fecha"}
                         {" · "}
                         {entry.kind === "event" ? "Calendario" : "Tarea"}
                       </p>
