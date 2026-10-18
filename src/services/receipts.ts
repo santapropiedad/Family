@@ -76,6 +76,7 @@ interface TabscannerResult {
   date?: string | null;
   dateISO?: string | null;
   establishment?: string | null;
+  customFields?: { ReceiptNumber?: string | null } | null;
   lineItems?: TabscannerLineItem[] | null;
 }
 
@@ -146,9 +147,7 @@ function normalizeReceiptResult(raw: TabscannerResult): ParsedReceipt {
     total: Math.round(raw.total * 100) / 100,
     spentAt,
     merchant: raw.establishment?.trim() || null,
-    // La API v2 de Tabscanner no entrega un N° de boleta estructurado; queda null salvo que el
-    // usuario lo escriba a mano en la pantalla de confirmación.
-    receiptNumber: null,
+    receiptNumber: raw.customFields?.ReceiptNumber?.trim() || null,
     items,
   };
 }
