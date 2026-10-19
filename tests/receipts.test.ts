@@ -1,10 +1,34 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { freshDb, createTestFamily } from "./helpers";
-import { confirmReceiptExpense, findPossibleDuplicateExpense } from "@/services/receipts";
+import {
+  confirmReceiptExpense,
+  findPossibleDuplicateExpense,
+  normalizeReceiptResult,
+  type TabscannerResult,
+} from "@/services/receipts";
 import { findCategoryByName, listExpenses } from "@/services/expenses";
 import { findInventoryItemByName } from "@/services/shopping";
 
 beforeEach(freshDb);
+
+describe("lector de boletas: normalización del resultado de Tabscanner", () => {
+  it("descarta líneas de descuento/devolución (monto negativo o cero) en vez de tratarlas como un producto (regresión)", () => {
+    const raw: TabscannerResult = {
+      total: 7490,
+      dateISO: "2026-10-18T00:00:00",
+      establishment: "Jumbo",
+      lineItems: [
+        { descClean: "Leche", qty: 1, lineTotal: 7990, price: 7990 },
+        { descClean: "Descuento promoción", qty: 1, lineTotal: -500, price: -500 },
+        { descClean: "Producto gratis", qty: 1, lineTotal: 0 },
+      ],
+    };
+    const parsed = normalizeReceiptResult(raw);
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.items[0].name).toBe("Leche");
+    expect(parsed.items.every((i) => (i.lineTotal ?? 0) >= 0)).toBe(true);
+  });
+});
 
 describe("lector de boletas: guardado de gasto + inventario", () => {
   it("crea el gasto en la categoría Supermercado y agrega los productos al inventario con su unidad", async () => {

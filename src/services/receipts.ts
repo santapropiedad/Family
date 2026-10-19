@@ -62,7 +62,7 @@ async function submitReceiptImage(imageDataUrl: string): Promise<SubmitReceiptRe
   return { token: body.token as string, duplicate: Boolean(body.duplicate) };
 }
 
-interface TabscannerLineItem {
+export interface TabscannerLineItem {
   descClean?: string | null;
   desc?: string | null;
   qty?: number | null;
@@ -71,7 +71,7 @@ interface TabscannerLineItem {
   lineTotal?: number | null;
 }
 
-interface TabscannerResult {
+export interface TabscannerResult {
   total?: number | null;
   date?: string | null;
   dateISO?: string | null;
@@ -129,18 +129,20 @@ function normalizeUnit(raw: string | null | undefined): InventoryUnit {
   return "unidades";
 }
 
-function normalizeReceiptResult(raw: TabscannerResult): ParsedReceipt {
+export function normalizeReceiptResult(raw: TabscannerResult): ParsedReceipt {
   if (!raw.total) {
     throw new AppError("No pudimos leer el monto total de la boleta. Pruebas con una foto más clara.", 422, "tabscanner_unreadable");
   }
   const spentAt = (raw.dateISO ?? raw.date ?? new Date().toISOString()).slice(0, 10);
   const items: ParsedReceiptItem[] = (raw.lineItems ?? [])
-    .filter((item) => (item.descClean || item.desc) && item.lineTotal)
+    // Descarta líneas de descuento/devolución (monto negativo o cero) y de propina/redondeo —
+    // no son productos comprados, así que no tiene sentido sumarlas al inventario.
+    .filter((item) => (item.descClean || item.desc) && item.lineTotal && item.lineTotal > 0)
     .map((item) => ({
       name: (item.descClean || item.desc || "Producto").trim(),
       qty: item.qty && item.qty > 0 ? item.qty : 1,
       unit: normalizeUnit(item.unit),
-      unitPrice: item.price ?? null,
+      unitPrice: item.price && item.price > 0 ? item.price : null,
       lineTotal: item.lineTotal ?? null,
     }));
   return {
