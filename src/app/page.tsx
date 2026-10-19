@@ -93,6 +93,11 @@ export default function HoyPage() {
     return visibleToViewer(t.assignees);
   });
 
+  // Los hijos no tienen su propio "Hoy", así que un admin/adulto ve acá, separado por hijo,
+  // lo que le corresponde a cada uno — en vez de mezclado con lo propio.
+  const children = members.filter((m) => m.role === "child");
+  const isParentViewer = session?.role === "admin" || session?.role === "adult";
+
   if (loading || !summary) {
     return <p className="text-sm text-muted">Cargando tu día…</p>;
   }
@@ -195,6 +200,43 @@ export default function HoyPage() {
           ))}
         </div>
       </section>
+
+      {isParentViewer && children.length > 0 && (
+        <section className="space-y-4">
+          {children.map((child) => {
+            const childTasks = tasks.filter((t) => t.assignees?.includes(child.id));
+            const childEvents = events.filter((e) => e.assignees?.includes(child.id));
+            return (
+              <div key={child.id}>
+                <h2 className="text-sm font-semibold text-muted mb-2">PRIORIDADES {child.name.toUpperCase()}</h2>
+                <div className="card p-3 space-y-1 mb-2">
+                  {childTasks.length === 0 && (
+                    <p className="text-sm text-muted py-2 px-1">Nada pendiente. ¡Buen día!</p>
+                  )}
+                  {childTasks.slice(0, 6).map((t) => (
+                    <div key={t.id} className="flex items-center gap-2.5 px-1 py-2">
+                      <span className={`priority-dot ${t.priority}`} />
+                      <span className="text-sm">{t.title}</span>
+                    </div>
+                  ))}
+                </div>
+                <h2 className="text-sm font-semibold text-muted mb-2">EVENTOS {child.name.toUpperCase()}</h2>
+                <div className="card p-3 space-y-2">
+                  {childEvents.length === 0 && (
+                    <p className="text-sm text-muted py-2 px-1">No hay eventos en este período.</p>
+                  )}
+                  {childEvents.map((e) => (
+                    <div key={e.id} className="flex items-center justify-between px-1 py-1.5">
+                      <span className="text-sm">{e.title}</span>
+                      <span className="text-xs text-muted capitalize">{formatEventTime(e.start_at)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </section>
+      )}
 
       <section>
         <h2 className="text-sm font-semibold text-muted mb-2">RESUMEN</h2>
