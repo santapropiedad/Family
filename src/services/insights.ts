@@ -5,6 +5,7 @@ import { listEvents } from "@/services/events";
 import { suggestLowStockItems } from "@/services/shopping";
 import { summarizeByCategory, totalForPeriod } from "@/services/expenses";
 import { getFamily } from "@/services/families";
+import { listMembers } from "@/services/members";
 
 export type InsightKind =
   | "bill_due_soon"
@@ -28,8 +29,24 @@ function endOfMonth(d: Date): string {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
 }
 
-function assignedToMember(assignees: string[] | undefined, memberId?: string): boolean {
-  return !memberId || !assignees || assignees.length === 0 || assignees.includes(memberId);
+function assignedToMember(assignees: string[] | undefined, visibleIds: string[] | undefined): boolean {
+  return !visibleIds || !assignees || assignees.length === 0 || assignees.some((id) => visibleIds.includes(id));
+}
+
+/**
+ * Los hijos no tienen acceso propio a la app (son menores), así que lo que ven Juan/Teany en
+ * "Hoy" debe incluir también lo que está asignado a cualquier hijo, no solo lo propio — si no,
+ * nadie vería las tareas de los chicos. Un niño (si algún día inicia sesión) solo ve lo suyo.
+ */
+async function resolveVisibleMemberIds(familyId: string, memberId?: string): Promise<string[] | undefined> {
+  if (!memberId) return undefined;
+  const members = await listMembers(familyId);
+  const viewer = members.find((m) => m.id === memberId);
+  if (viewer && (viewer.role === "admin" || viewer.role === "adult")) {
+    const childIds = members.filter((m) => m.role === "child").map((m) => m.id);
+    return [memberId, ...childIds];
+  }
+  return [memberId];
 }
 
 /** Motor de inteligencia proactiva: detecta situaciones útiles sin ejecutar ninguna acción por sí solo. */
@@ -37,6 +54,7 @@ export async function detectInsights(familyId: string, memberId?: string): Promi
   const family = await getFamily(familyId);
   const insights: Insight[] = [];
   if (!family.ai_proactive_enabled) return insights;
+  const visibleIds = await resolveVisibleMemberIds(familyId, memberId);
 
   const now = new Date();
   const in3Days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -72,7 +90,7 @@ export async function detectInsights(familyId: string, memberId?: string): Promi
   const pendingTasks = await listTasks(familyId, { status: "pending" });
   const today = now.toISOString().slice(0, 10);
   for (const task of pendingTasks) {
-    if (!assignedToMember(task.assignees, memberId)) continue;
+    if (!assignedToMember(task.assignees, visibleIds)) continue;
     if (task.due_date && task.due_date < today) {
       const daysLate = Math.round(
         (new Date(today).getTime() - new Date(task.due_date).getTime()) / (1000 * 60 * 60 * 24)
@@ -149,7 +167,7 @@ function greetingForHour(hour: number): string {
 
 export async function buildTodaySummary(familyId: string, memberId?: string): Promise<TodaySummary> {
   const now = new Date();
-  const [allTasks, allEvents, allCompletedTasks, insights] = await Promise.all([
+  const [allTasks, allEvents, allCompletedTasks, insights, visibleIds] = await Promise.all([
     listTasks(familyId, { status: "pending" }),
     listEvents(familyId, {
       from: now.toISOString(),
@@ -157,11 +175,12 @@ export async function buildTodaySummary(familyId: string, memberId?: string): Pr
     }),
     listTasks(familyId, { status: "completed" }),
     detectInsights(familyId, memberId),
+    resolveVisibleMemberIds(familyId, memberId),
   ]);
 
-  const tasks = allTasks.filter((t) => assignedToMember(t.assignees, memberId));
-  const events = allEvents.filter((e) => assignedToMember(e.assignees, memberId));
-  const completedTasks = allCompletedTasks.filter((t) => assignedToMember(t.assignees, memberId));
+  const tasks = allTasks.filter((t) => assignedToMember(t.assignees, visibleIds));
+  const events = allEvents.filter((e) => assignedToMember(e.assignees, visibleIds));
+  const completedTasks = allCompletedTasks.filter((t) => assignedToMember(t.assignees, visibleIds));
 
   const db = await getDb();
   const shoppingCount = await db.query<{ count: string }>(

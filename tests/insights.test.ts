@@ -47,7 +47,7 @@ describe("inteligencia proactiva", () => {
     expect(text.length).toBeGreaterThan(0);
   });
 
-  it("el resumen de 'Hoy' filtrado por integrante solo muestra tareas y eventos asignados a esa persona", async () => {
+  it("el resumen de 'Hoy' de un adulto incluye lo propio, lo sin asignar, Y lo asignado a cualquier hijo (los hijos no tienen acceso propio)", async () => {
     const { familyId, adultId, childId } = await createTestFamily("filtered");
     await createTask(familyId, { title: "Tarea del adulto", assigneeIds: [adultId] });
     await createTask(familyId, { title: "Tarea del niño", assigneeIds: [childId] });
@@ -57,8 +57,22 @@ describe("inteligencia proactiva", () => {
     const adultTitles = adultSummary.priorities.map((p) => p.title);
     expect(adultTitles).toContain("Tarea del adulto");
     expect(adultTitles).toContain("Tarea sin asignar");
-    expect(adultTitles).not.toContain("Tarea del niño");
-    expect(adultSummary.pendingTasksCount).toBe(2);
+    expect(adultTitles).toContain("Tarea del niño");
+    expect(adultSummary.pendingTasksCount).toBe(3);
+  });
+
+  it("el resumen de 'Hoy' de un niño solo muestra lo propio y lo sin asignar, no lo de otro integrante", async () => {
+    const { familyId, adultId, childId } = await createTestFamily("filtered-child-view");
+    await createTask(familyId, { title: "Tarea del adulto", assigneeIds: [adultId] });
+    await createTask(familyId, { title: "Tarea del niño", assigneeIds: [childId] });
+    await createTask(familyId, { title: "Tarea sin asignar" });
+
+    const childSummary = await buildTodaySummary(familyId, childId);
+    const childTitles = childSummary.priorities.map((p) => p.title);
+    expect(childTitles).toContain("Tarea del niño");
+    expect(childTitles).toContain("Tarea sin asignar");
+    expect(childTitles).not.toContain("Tarea del adulto");
+    expect(childSummary.pendingTasksCount).toBe(2);
   });
 
   it("no genera insights si la inteligencia proactiva está desactivada", async () => {

@@ -53,6 +53,21 @@ export default function HoyPage() {
   const [loading, setLoading] = useState(true);
   const [rangeView, setRangeView] = useState<RangeView>("dia");
 
+  // Los hijos no tienen acceso propio (son menores), así que un admin/adulto ve también lo
+  // asignado a cualquier hijo en su propio "Hoy" — si no, nadie vería las tareas de los chicos.
+  const visibleMemberIds = (() => {
+    if (!session) return null;
+    if (session.role === "admin" || session.role === "adult") {
+      return [session.familyMemberId, ...members.filter((m) => m.role === "child").map((m) => m.id)];
+    }
+    return [session.familyMemberId];
+  })();
+
+  function visibleToViewer(assignees: string[] | undefined): boolean {
+    if (!assignees || assignees.length === 0) return true;
+    return !visibleMemberIds || assignees.some((id) => visibleMemberIds.includes(id));
+  }
+
   useEffect(() => {
     async function load() {
       const { from, to } = rangeBounds(rangeView);
@@ -63,22 +78,19 @@ export default function HoyPage() {
       ]);
       setSummary(summaryRes);
       setTasks(tasksRes.tasks);
-      setEvents(
-        eventsRes.events.filter(
-          (e) => !e.assignees || e.assignees.length === 0 || (session && e.assignees.includes(session.familyMemberId))
-        )
-      );
+      setEvents(eventsRes.events.filter((e) => visibleToViewer(e.assignees)));
       setLoading(false);
     }
     load();
-  }, [session, rangeView]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, rangeView, members]);
 
   const { from: rangeFrom, to: rangeTo } = rangeBounds(rangeView);
   const tasksInRange = tasks.filter((t) => {
     if (!t.due_date) return false;
     const due = new Date(t.due_time ? `${t.due_date}T${t.due_time}` : `${t.due_date}T00:00:00`);
     if (due < rangeFrom || due > rangeTo) return false;
-    return !t.assignees || t.assignees.length === 0 || (session && t.assignees.includes(session.familyMemberId));
+    return visibleToViewer(t.assignees);
   });
 
   if (loading || !summary) {
