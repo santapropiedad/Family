@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
+import { getIconDataUrl } from "../../icon-source";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ size: string }> }) {
   const { size } = await params;
@@ -7,22 +8,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ siz
 
   return new ImageResponse(
     (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#6c5ce7",
-          color: "white",
-          fontSize: px * 0.5,
-          fontWeight: 700,
-          fontFamily: "system-ui, sans-serif",
-        }}
-      >
-        F+
-      </div>
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={getIconDataUrl()} width={px} height={px} alt="" />
     ),
     { width: px, height: px }
   );
