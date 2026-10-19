@@ -181,10 +181,6 @@ export async function buildTodaySummary(familyId: string, memberId?: string): Pr
   const tasks = allTasks.filter((t) => assignedToMember(t.assignees, visibleIds));
   const events = allEvents.filter((e) => assignedToMember(e.assignees, visibleIds));
   const completedTasks = allCompletedTasks.filter((t) => assignedToMember(t.assignees, visibleIds));
-  // Las tareas de los hijos se muestran aparte, agrupadas por integrante (ver Hoy en el
-  // frontend) — la lista de "prioridades" de este resumen queda solo para lo propio del
-  // adulto y lo sin asignar, para no duplicar lo que ya aparece en su propia sección.
-  const ownTasks = allTasks.filter((t) => assignedToMember(t.assignees, memberId ? [memberId] : undefined));
 
   const db = await getDb();
   const shoppingCount = await db.query<{ count: string }>(
@@ -200,7 +196,7 @@ export async function buildTodaySummary(familyId: string, memberId?: string): Pr
     ...insights
       .filter((i) => i.priority === "red")
       .map((i) => ({ id: i.entityId ?? i.kind, title: i.title, priority: i.priority, kind: i.kind })),
-    ...ownTasks.slice(0, 6).map((t) => ({ id: t.id, title: t.title, priority: t.priority, kind: "task" })),
+    ...tasks.slice(0, 6).map((t) => ({ id: t.id, title: t.title, priority: t.priority, kind: "task" })),
   ].slice(0, 6);
 
   return {

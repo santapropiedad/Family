@@ -47,7 +47,7 @@ describe("inteligencia proactiva", () => {
     expect(text.length).toBeGreaterThan(0);
   });
 
-  it("'priorities' de un adulto muestra lo propio y lo sin asignar (lo del hijo se ve aparte, agrupado por integrante, en el frontend), pero el conteo total sí incluye a los hijos", async () => {
+  it("'priorities' de un adulto incluye lo propio, lo sin asignar, Y lo de cualquier hijo (el frontend marca de quién es cada una)", async () => {
     const { familyId, adultId, childId } = await createTestFamily("filtered");
     await createTask(familyId, { title: "Tarea del adulto", assigneeIds: [adultId] });
     await createTask(familyId, { title: "Tarea del niño", assigneeIds: [childId] });
@@ -57,7 +57,7 @@ describe("inteligencia proactiva", () => {
     const adultTitles = adultSummary.priorities.map((p) => p.title);
     expect(adultTitles).toContain("Tarea del adulto");
     expect(adultTitles).toContain("Tarea sin asignar");
-    expect(adultTitles).not.toContain("Tarea del niño");
+    expect(adultTitles).toContain("Tarea del niño");
     expect(adultSummary.pendingTasksCount).toBe(3);
   });
 
