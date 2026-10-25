@@ -68,8 +68,6 @@ export default function GastosPage() {
   const [editAmount, setEditAmount] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editCategoryId, setEditCategoryId] = useState("");
-  const [addingCategory, setAddingCategory] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [scanning, setScanning] = useState(false);
@@ -132,17 +130,6 @@ export default function GastosPage() {
   async function removeExpense(id: string) {
     if (!confirm("¿Eliminar este gasto?")) return;
     await api.delete(`/api/expenses/${id}`);
-    loadAll();
-  }
-
-  async function addCategory(e: React.FormEvent) {
-    e.preventDefault();
-    const name = newCategoryName.trim();
-    if (!name) return;
-    const { category } = await api.post<{ category: ExpenseCategory }>("/api/categories", { name });
-    setNewCategoryName("");
-    setAddingCategory(false);
-    setCategoryId(category.id);
     loadAll();
   }
 
@@ -254,32 +241,7 @@ export default function GastosPage() {
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={() => setAddingCategory((v) => !v)}
-            title="Crear una categoría nueva"
-            className="shrink-0 rounded-xl border px-3 py-2 text-sm"
-          >
-            + Categoría
-          </button>
         </div>
-        {addingCategory && (
-          <div className="flex gap-2">
-            <input
-              value={newCategoryName}
-              onChange={(e) => setNewCategoryName(e.target.value)}
-              placeholder="Nombre de la categoría (ej. Servicios Básicos)"
-              className="flex-1 rounded-xl border px-3 py-2 text-sm bg-transparent"
-            />
-            <button
-              type="button"
-              onClick={addCategory}
-              className="shrink-0 rounded-xl bg-primary text-white px-4 text-sm font-medium"
-            >
-              Crear
-            </button>
-          </div>
-        )}
         <input
           value={description}
           onChange={(e) => setDescription(e.target.value)}
