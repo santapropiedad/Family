@@ -7,7 +7,6 @@ export interface NavItem {
 export const PRIMARY_NAV: NavItem[] = [
   { href: "/", label: "Hoy", icon: "🏠" },
   { href: "/casa", label: "Casa", icon: "🧹" },
-  { href: "/cuentas", label: "Cuentas", icon: "💡" },
   { href: "/compras-feria", label: "Compras Feria", icon: "🥬" },
   { href: "/compras-supermercado", label: "Compras Super", icon: "🛒" },
   { href: "/gastos", label: "Gastos", icon: "💰" },

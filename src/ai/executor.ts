@@ -178,6 +178,8 @@ function describePendingAction(toolName: string, params: Record<string, unknown>
       return "¿Confirmas que quieres eliminar esta tarea? Esta acción no se puede deshacer.";
     case "delete_event":
       return "¿Confirmas que quieres eliminar este evento? Esta acción no se puede deshacer.";
+    case "delete_bill":
+      return "¿Confirmas que quieres eliminar esta cuenta? Esta acción no se puede deshacer.";
     case "log_expense":
       return `Voy a registrar un gasto de ${money(Number(params.amount ?? 0))}${params.category_name ? ` en ${params.category_name}` : ""}. ¿Confirmas?`;
     case "record_purchase":

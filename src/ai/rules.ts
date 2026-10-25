@@ -460,6 +460,28 @@ export async function handleWithRules(
     return { reply, action };
   }
 
+  // "Elimina la cuenta de luz" / "borra la cuenta del agua" / "cancela la cuenta de internet"
+  const deleteBillMatch = lower.match(
+    /(?:elimina(?:r)?|borra(?:r)?|cancela(?:r)?)\s+la\s+cuenta\s+(?:de|del)\s+(.+)/
+  );
+  if (deleteBillMatch) {
+    const target = deleteBillMatch[1].trim();
+    const listAction = await executeTool(ctx, "list_bills", {}, conversationId);
+    const bills = (listAction.result as Array<{ id: string; name: string }>) ?? [];
+    const match = bills.find(
+      (b) => b.name.toLowerCase().includes(target) || target.includes(b.name.toLowerCase())
+    );
+    if (!match) {
+      return { reply: `No encontré ninguna cuenta que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "delete_bill", { bill_id: match.id }, conversationId);
+    return {
+      reply:
+        action.status === "pending_confirmation" ? action.confirmationMessage! : `Eliminé la cuenta "${match.name}".`,
+      action,
+    };
+  }
+
   // "¿Qué mantenimientos están pendientes?" (listado general, antes de la consulta por nombre)
   if (/qu[eé]\s+mantenci(o|ó)n(es)?\b.*pendiente/.test(lower)) {
     const action = await executeTool(ctx, "list_maintenance", {}, conversationId);

@@ -460,6 +460,17 @@ export const TOOLS: ToolDefinition[] = [
     requiredCapability: "bills:manage",
     handler: async (ctx, params) => billsService.payBill(ctx.familyId, params.bill_id as string, ctx.actorMemberId),
   },
+  {
+    name: "delete_bill",
+    description: "Elimina una cuenta del hogar (luz, agua, internet, etc.) de forma permanente.",
+    parameters: { type: "object", properties: { bill_id: str("ID de la cuenta") }, required: ["bill_id"] },
+    confirmationLevel: "confirm",
+    requiredCapability: "bills:manage",
+    handler: async (ctx, params) => {
+      await billsService.deleteBill(ctx.familyId, params.bill_id as string);
+      return { deleted: true };
+    },
+  },
 
   // --- Familia ---
   {
