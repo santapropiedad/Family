@@ -117,6 +117,13 @@ export default function HoyPage() {
 
   const suggestions = summary.insights.filter((i) => UNIQUE_INSIGHT_KINDS.has(i.kind));
 
+  // Quien inició sesión ve su propio ícono primero en "Familia" (el resto mantiene su orden).
+  const orderedMembers = session
+    ? [...members].sort((a, b) =>
+        a.id === session.familyMemberId ? -1 : b.id === session.familyMemberId ? 1 : 0
+      )
+    : members;
+
   return (
     <div className="space-y-6">
       <header>
@@ -168,7 +175,7 @@ export default function HoyPage() {
       <section>
         <h2 className="text-sm font-semibold text-muted mb-2">FAMILIA</h2>
         <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.max(members.length, 1)}, minmax(0, 1fr))` }}>
-          {members.map((m) => {
+          {orderedMembers.map((m) => {
             const memberTasks = tasks.filter((t) => t.assignees?.includes(m.id));
             const href = `/integrante/${m.id}`;
             return (
