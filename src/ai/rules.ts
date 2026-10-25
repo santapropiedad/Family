@@ -33,6 +33,18 @@ export async function handleWithRules(
   const lower = text.toLowerCase().trim();
   const members = await membersService.listMembers(ctx.familyId);
 
+  // Saludos y cortesías básicas: sin esto, algo tan simple como "gracias" caía en el
+  // "no entendí" de más abajo.
+  if (/^(hola|buenas|buenos d[ií]as|buenas tardes|buenas noches)[\s!¡.,]*$/.test(lower)) {
+    return { reply: "¡Hola! ¿En qué te ayudo?" };
+  }
+  if (/^(gracias|muchas gracias|te pasaste|genial|perfecto|ok|dale|bien|buena)[\s!¡.,]*$/.test(lower)) {
+    return { reply: "¡De nada! Avísame si necesitas algo más." };
+  }
+  if (/^(chao|adi[oó]s|nos vemos|hasta luego)[\s!¡.,]*$/.test(lower)) {
+    return { reply: "¡Chao! Aquí estaré cuando me necesites." };
+  }
+
   // "Compré leche por $8.990" / "compre leche por 8990 pesos"
   const buyMatch = lower.match(/compr[eé]\s+(.+?)\s+por\s+(.+)/);
   if (buyMatch) {
@@ -188,10 +200,28 @@ export async function handleWithRules(
     return { reply: `Agregué "${itemName}" a la lista de compras${store ? ` de ${store}` : ""}.`, action };
   }
 
+  // "Quita el pan de la lista" / "elimina la leche de las compras"
+  const removeShoppingMatch = lower.match(
+    /(?:quita(?:r)?|elimina(?:r)?|borra(?:r)?)\s+(.+?)\s+de\s+la\s+lista(?:\s+de\s+compras)?/
+  );
+  if (removeShoppingMatch) {
+    const target = removeShoppingMatch[1].trim();
+    const listAction = await executeTool(ctx, "list_shopping_items", { status: "pending" }, conversationId);
+    const items = (listAction.result as Array<{ id: string; name: string }>) ?? [];
+    const match = items.find(
+      (i) => i.name.toLowerCase().includes(target) || target.includes(i.name.toLowerCase())
+    );
+    if (!match) {
+      return { reply: `No encontré "${target}" en la lista de compras.`, action: listAction };
+    }
+    const action = await executeTool(ctx, "remove_shopping_item", { item_id: match.id }, conversationId);
+    return { reply: `Quité "${match.name}" de la lista de compras.`, action };
+  }
+
   // "Recuérdame comprar pan mañana" / "recuérdame pagar internet todos los meses"
-  const reminderMatch = lower.match(/record(a|á)rme\s+(.+)/);
+  const reminderMatch = lower.match(/recu[eé]rdame\s+(.+)/);
   if (reminderMatch) {
-    const body = reminderMatch[2];
+    const body = reminderMatch[1];
     const date = parseRelativeDate(body) ?? parseRelativeDate("mañana");
     const recurrence = parseRecurrence(body);
     const remindAt = `${date}T09:00:00`;
@@ -202,6 +232,35 @@ export async function handleWithRules(
       conversationId
     );
     return { reply: `Te voy a recordar: "${body.trim()}".`, action };
+  }
+
+  // "Elimina el recordatorio de pagar internet" / "cancela el recordatorio del dentista"
+  const deleteReminderMatch = lower.match(
+    /(?:elimina(?:r)?|borra(?:r)?|cancela(?:r)?)\s+el\s+recordatorio\s+(?:de\s+)?(.+)/
+  );
+  if (deleteReminderMatch) {
+    const target = deleteReminderMatch[1].trim();
+    const listAction = await executeTool(ctx, "list_reminders", { status: "pending" }, conversationId);
+    const reminders = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+    const match = reminders.find(
+      (r) => r.title.toLowerCase().includes(target) || target.includes(r.title.toLowerCase())
+    );
+    if (!match) {
+      return { reply: `No encontré ningún recordatorio pendiente que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "delete_reminder", { reminder_id: match.id }, conversationId);
+    return { reply: `Eliminé el recordatorio "${match.title}".`, action };
+  }
+
+  // "¿Qué recordatorios tengo?"
+  if (/qu[eé]\s+recordatorios?\b/.test(lower)) {
+    const action = await executeTool(ctx, "list_reminders", { status: "pending" }, conversationId);
+    const reminders = (action.result as Array<{ title: string }>) ?? [];
+    const reply =
+      reminders.length === 0
+        ? "No tienes recordatorios pendientes."
+        : `Tus recordatorios: ${reminders.map((r) => r.title).join(", ")}.`;
+    return { reply, action };
   }
 
   // "Asigna a papá revisar la piscina"
@@ -243,6 +302,26 @@ export async function handleWithRules(
     }
     const action = await executeTool(ctx, "complete_task", { task_id: match.id }, conversationId);
     return { reply: `Marqué como completada: "${match.title}".`, action };
+  }
+
+  // "Elimina la tarea de sacar la basura" / "borra la tarea revisar la piscina"
+  const deleteTaskMatch = lower.match(/(?:elimina(?:r)?|borra(?:r)?)\s+la\s+tarea\s+(?:de\s+)?(.+)/);
+  if (deleteTaskMatch) {
+    const target = deleteTaskMatch[1].trim();
+    const listAction = await executeTool(ctx, "list_tasks", { status: "pending" }, conversationId);
+    const tasks = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+    const match = tasks.find(
+      (t) => t.title.toLowerCase().includes(target) || target.includes(t.title.toLowerCase())
+    );
+    if (!match) {
+      return { reply: `No encontré ninguna tarea pendiente que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "delete_task", { task_id: match.id }, conversationId);
+    return {
+      reply:
+        action.status === "pending_confirmation" ? action.confirmationMessage! : `Eliminé la tarea "${match.title}".`,
+      action,
+    };
   }
 
   // "¿Qué tareas están pendientes?"
@@ -313,6 +392,30 @@ export async function handleWithRules(
     };
   }
 
+  // "Elimina el evento de cumpleaños de Martina" / "cancela el evento de la piscina"
+  const deleteEventMatch = lower.match(
+    /(?:elimina(?:r)?|borra(?:r)?|cancela(?:r)?)\s+el\s+evento\s+(?:de\s+)?(.+)/
+  );
+  if (deleteEventMatch) {
+    const target = deleteEventMatch[1].trim();
+    const now = new Date();
+    const listAction = await executeTool(
+      ctx,
+      "list_events",
+      { from: now.toISOString(), to: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString() },
+      conversationId
+    );
+    const events = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+    const match = events.find(
+      (e) => e.title.toLowerCase().includes(target) || target.includes(e.title.toLowerCase())
+    );
+    if (!match) {
+      return { reply: `No encontré ningún evento próximo que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "delete_event", { event_id: match.id }, conversationId);
+    return { reply: `Eliminé el evento "${match.title}".`, action };
+  }
+
   // "¿Qué falta comprar?" / "¿qué tenemos que comprar?"
   if (/falta comprar|qu[eé] (tenemos|hay) que comprar|lista de compras/.test(lower)) {
     const action = await executeTool(ctx, "list_shopping_items", { status: "pending" }, conversationId);
@@ -346,6 +449,17 @@ export async function handleWithRules(
     };
   }
 
+  // "¿Qué cuentas tengo pendientes?" / "cuentas por pagar"
+  if (/cuentas?\s+(pendientes?|por\s+pagar)|qu[eé]\s+cuentas?\s+(tengo|hay|debo)/.test(lower)) {
+    const action = await executeTool(ctx, "list_bills", { status: "pending" }, conversationId);
+    const bills = (action.result as Array<{ name: string; amount: string; due_date: string }>) ?? [];
+    const reply =
+      bills.length === 0
+        ? "No tienes cuentas pendientes."
+        : `Cuentas pendientes: ${bills.map((b) => `${b.name} (${money(Number(b.amount))}, vence ${b.due_date})`).join("; ")}.`;
+    return { reply, action };
+  }
+
   // "¿Qué mantenimientos están pendientes?" (listado general, antes de la consulta por nombre)
   if (/qu[eé]\s+mantenci(o|ó)n(es)?\b.*pendiente/.test(lower)) {
     const action = await executeTool(ctx, "list_maintenance", {}, conversationId);
@@ -376,6 +490,6 @@ export async function handleWithRules(
 
   return {
     reply:
-      "No entendí ese pedido. Puedo ayudarte con cosas como: registrar o consultar gastos, agregar productos a la lista de compras, ver cuánto queda de algo, crear o completar tareas, crear eventos en el calendario y revisar mantenciones. Decímelo con esas palabras, o agrega ANTHROPIC_API_KEY en .env.local para que entienda frases más libres.",
+      "No entendí ese pedido. Puedo ayudarte con cosas como: registrar o consultar gastos, agregar o quitar productos de la lista de compras, ver cuánto queda de algo, crear, completar o eliminar tareas, crear o eliminar eventos y recordatorios, y revisar cuentas o mantenciones. Intenta decírmelo con esas palabras.",
   };
 }
