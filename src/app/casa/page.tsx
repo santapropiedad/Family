@@ -14,7 +14,6 @@ export default function CasaPage() {
   const [newTime, setNewTime] = useState("");
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [postponeFor, setPostponeFor] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDate, setEditDate] = useState("");
@@ -60,7 +59,7 @@ export default function CasaPage() {
   async function postpone(task: Task, minutes: number) {
     const { dueDate, dueTime } = postponeDue(task, minutes);
     await api.patch(`/api/tasks/${task.id}`, { dueDate, dueTime });
-    setPostponeFor(null);
+    setEditingId(null);
     loadAll();
   }
 
@@ -69,7 +68,6 @@ export default function CasaPage() {
     setEditTitle(task.title);
     setEditDate(task.due_date ?? "");
     setEditTime(task.due_time ? task.due_time.slice(0, 5) : "");
-    setPostponeFor(null);
   }
 
   async function saveEdit(id: string) {
@@ -170,6 +168,23 @@ export default function CasaPage() {
                       className="w-28 rounded-xl border px-3 py-2 text-sm bg-transparent"
                     />
                   </div>
+                  {t.status === "pending" && (
+                    <div className="flex gap-2">
+                      <span className="text-xs text-muted self-center">Posponer:</span>
+                      <button onClick={() => postpone(t, 15)} className="text-xs px-2 py-1 rounded-lg bg-border/60">
+                        +15 min
+                      </button>
+                      <button onClick={() => postpone(t, 60)} className="text-xs px-2 py-1 rounded-lg bg-border/60">
+                        +1 hora
+                      </button>
+                      <button
+                        onClick={() => postpone(t, 60 * 24)}
+                        className="text-xs px-2 py-1 rounded-lg bg-border/60"
+                      >
+                        +1 día
+                      </button>
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <button
                       onClick={() => saveEdit(t.id)}
@@ -212,35 +227,14 @@ export default function CasaPage() {
                         {t.due_time && ` ${t.due_time.slice(0, 5)}`}
                       </span>
                     )}
-                    <button onClick={() => startEdit(t)} className="text-xs text-muted shrink-0" title="Editar">
-                      ✎
+                    <button
+                      onClick={() => startEdit(t)}
+                      className="text-xs text-muted shrink-0 px-2 py-1 rounded-lg hover:bg-border/60"
+                      title="Editar, posponer o eliminar"
+                    >
+                      ✎ Editar
                     </button>
-                    {t.status === "pending" && (
-                      <button
-                        onClick={() => setPostponeFor(postponeFor === t.id ? null : t.id)}
-                        className="text-xs text-muted shrink-0"
-                        title="Postergar"
-                      >
-                        ⏰
-                      </button>
-                    )}
                   </div>
-                  {postponeFor === t.id && (
-                    <div className="flex gap-2 pt-2 pl-7">
-                      <button onClick={() => postpone(t, 15)} className="text-xs px-2 py-1 rounded-lg bg-border/60">
-                        +15 min
-                      </button>
-                      <button onClick={() => postpone(t, 60)} className="text-xs px-2 py-1 rounded-lg bg-border/60">
-                        +1 hora
-                      </button>
-                      <button
-                        onClick={() => postpone(t, 60 * 24)}
-                        className="text-xs px-2 py-1 rounded-lg bg-border/60"
-                      >
-                        +1 día
-                      </button>
-                    </div>
-                  )}
                 </div>
               )
             )}
