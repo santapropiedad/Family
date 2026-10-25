@@ -139,6 +139,12 @@ export const createMaintenanceSchema = z.object({
   notes: z.string().trim().max(1000).nullable().optional(),
 });
 
+export const createCategorySchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  icon: z.string().trim().min(1).max(8).optional(),
+  color: z.string().trim().min(1).max(20).optional(),
+});
+
 export const createBillSchema = z.object({
   name: z.string().trim().min(1).max(120),
   provider: z.string().trim().max(120).nullable().optional(),

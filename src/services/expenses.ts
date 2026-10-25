@@ -12,6 +12,24 @@ export async function listCategories(familyId: string): Promise<ExpenseCategory[
   return result.rows;
 }
 
+export interface CreateCategoryInput {
+  name: string;
+  icon?: string;
+  color?: string;
+}
+
+export async function createCategory(familyId: string, input: CreateCategoryInput): Promise<ExpenseCategory> {
+  const db = await getDb();
+  const existing = await findCategoryByName(familyId, input.name, db);
+  if (existing) return existing;
+  const result = await db.query<ExpenseCategory>(
+    `INSERT INTO expense_categories (id, family_id, name, icon, color, is_default)
+     VALUES ($1, $2, $3, $4, $5, FALSE) RETURNING *`,
+    [newId(), familyId, input.name.trim(), input.icon ?? "🧾", input.color ?? "#6366f1"]
+  );
+  return result.rows[0];
+}
+
 export async function findCategoryByName(
   familyId: string,
   name: string,
