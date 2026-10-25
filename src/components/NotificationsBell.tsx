@@ -3,12 +3,37 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 import { postponeDue } from "@/lib/taskTime";
+import { subscribeToPush } from "@/lib/push-client";
 import type { Notification } from "@/types/domain";
+
+type PushStatus = "granted" | "denied" | "default" | "unsupported";
+
+function readPushStatus(): PushStatus {
+  if (typeof window === "undefined" || typeof Notification === "undefined") return "unsupported";
+  return Notification.permission;
+}
 
 export default function NotificationsBell() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pushStatus, setPushStatus] = useState<PushStatus>("unsupported");
+  const [activating, setActivating] = useState(false);
+
+  useEffect(() => {
+    setPushStatus(readPushStatus());
+  }, []);
+
+  async function activatePush() {
+    setActivating(true);
+    try {
+      const permission = await window.Notification.requestPermission().catch(() => "denied" as NotificationPermission);
+      if (permission === "granted") await subscribeToPush();
+    } finally {
+      setPushStatus(readPushStatus());
+      setActivating(false);
+    }
+  }
 
   async function load() {
     const res = await api.get<{ notifications: Notification[] }>("/api/notifications");
@@ -65,6 +90,32 @@ export default function NotificationsBell() {
               ✕
             </button>
           </div>
+
+          {pushStatus === "default" && (
+            <div className="px-3 py-2.5 border-b bg-primary/5 flex items-center justify-between gap-2">
+              <p className="text-xs">🔕 Avisos desactivados en este dispositivo.</p>
+              <button
+                onClick={activatePush}
+                disabled={activating}
+                className="text-xs font-medium text-primary shrink-0 disabled:opacity-50"
+              >
+                {activating ? "Activando…" : "Activar"}
+              </button>
+            </div>
+          )}
+          {pushStatus === "denied" && (
+            <div className="px-3 py-2.5 border-b bg-priority-red/5">
+              <p className="text-xs">
+                🔕 Los avisos están bloqueados para esta app en tu navegador. Para activarlos, entra a la
+                configuración del navegador (⋮ → Información del sitio o Configuración del sitio) y permite las
+                notificaciones para esta página.
+              </p>
+            </div>
+          )}
+          {pushStatus === "granted" && (
+            <p className="px-3 py-2 border-b text-xs text-muted">🔔 Avisos activados en este dispositivo.</p>
+          )}
+
           {loading && <p className="text-sm text-muted p-4">Cargando…</p>}
           {!loading && items.length === 0 && <p className="text-sm text-muted p-4">Sin avisos todavía.</p>}
           <div className="divide-y">
