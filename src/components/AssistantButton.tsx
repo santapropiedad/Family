@@ -59,7 +59,10 @@ export default function AssistantButton() {
         <AssistantPanel
           onClose={close}
           initialCommand={openedViaWake ? wakeCommand : undefined}
-          autoListenOnOpen={openedViaWake && !wakeCommand.trim()}
+          // Al abrir el panel (toques el botón flotante o lo active "Hey Familia"), se pone a
+          // escuchar de inmediato -- un solo toque para hablar, como Gemini/Alexa -- salvo que
+          // ya traiga un comando dicho antes de abrir (ahí se manda directo, ver initialCommand).
+          autoListenOnOpen={!wakeCommand.trim()}
           handsFree={handsFree}
           onToggleHandsFree={toggleHandsFree}
         />
