@@ -150,7 +150,13 @@ export async function detectInsights(familyId: string, memberId?: string): Promi
 
 export interface TodaySummary {
   greeting: string;
-  priorities: Array<{ id: string; title: string; priority: "red" | "yellow" | "green"; kind: string }>;
+  priorities: Array<{
+    id: string;
+    title: string;
+    priority: "red" | "yellow" | "green";
+    kind: string;
+    daysLate?: number;
+  }>;
   pendingTasksCount: number;
   completedTasksCount: number;
   pendingShoppingCount: number;
@@ -192,11 +198,27 @@ export async function buildTodaySummary(familyId: string, memberId?: string): Pr
     (t) => t.completed_at && t.completed_at.slice(0, 10) === now.toISOString().slice(0, 10)
   ).length;
 
+  // Las tareas atrasadas ya generan su propio insight "overdue_task" (texto tipo "lleva X días
+  // atrasada"); si además se incluyen tal cual en la lista de tareas de abajo, la misma tarea
+  // termina apareciendo dos veces en Prioridades. En vez de eso, acá se calculan los días de
+  // atraso directo sobre la tarea y se muestran en una sola línea junto a su título.
+  const todayStr = now.toISOString().slice(0, 10);
+  function daysLateFor(dueDate: string | null): number | undefined {
+    if (!dueDate || dueDate >= todayStr) return undefined;
+    const due = new Date(`${dueDate}T00:00:00`);
+    const today = new Date(`${todayStr}T00:00:00`);
+    return Math.round((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+  }
+  const tasksByUrgency = [...tasks].sort((a, b) => (daysLateFor(b.due_date) ?? -1) - (daysLateFor(a.due_date) ?? -1));
+
   const priorities = [
     ...insights
-      .filter((i) => i.priority === "red")
+      .filter((i) => i.priority === "red" && i.kind !== "overdue_task")
       .map((i) => ({ id: i.entityId ?? i.kind, title: i.title, priority: i.priority, kind: i.kind })),
-    ...tasks.slice(0, 6).map((t) => ({ id: t.id, title: t.title, priority: t.priority, kind: "task" })),
+    ...tasksByUrgency.slice(0, 6).map((t) => {
+      const daysLate = daysLateFor(t.due_date);
+      return { id: t.id, title: t.title, priority: daysLate ? "red" as const : t.priority, kind: "task", daysLate };
+    }),
   ].slice(0, 6);
 
   return {

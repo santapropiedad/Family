@@ -16,7 +16,13 @@ interface Insight {
 
 interface TodaySummary {
   greeting: string;
-  priorities: Array<{ id: string; title: string; priority: "red" | "yellow" | "green"; kind: string }>;
+  priorities: Array<{
+    id: string;
+    title: string;
+    priority: "red" | "yellow" | "green";
+    kind: string;
+    daysLate?: number;
+  }>;
   pendingTasksCount: number;
   completedTasksCount: number;
   pendingShoppingCount: number;
@@ -147,7 +153,15 @@ export default function HoyPage() {
             return (
               <div key={p.id} className="flex items-center gap-2.5 px-1 py-2">
                 <span className={`priority-dot ${p.priority} shrink-0`} />
-                <span className="text-sm flex-1 min-w-0 truncate">{p.title}</span>
+                <span className="text-sm flex-1 min-w-0 truncate">
+                  {p.title}
+                  {p.daysLate ? (
+                    <span className="text-priority-red">
+                      {" "}
+                      · lleva {p.daysLate} día{p.daysLate === 1 ? "" : "s"} atrasada
+                    </span>
+                  ) : null}
+                </span>
                 {ownerName && <span className="text-xs text-muted shrink-0">{ownerName}</span>}
               </div>
             );
