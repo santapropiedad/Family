@@ -6,6 +6,14 @@ import { api } from "@/lib/api-client";
 import { useSession } from "@/components/SessionProvider";
 import type { FamilyEvent, Task } from "@/types/domain";
 
+interface Insight {
+  kind: string;
+  priority: "red" | "yellow" | "green";
+  title: string;
+  detail: string;
+  entityId?: string;
+}
+
 interface TodaySummary {
   greeting: string;
   priorities: Array<{ id: string; title: string; priority: "red" | "yellow" | "green"; kind: string }>;
@@ -14,7 +22,12 @@ interface TodaySummary {
   pendingShoppingCount: number;
   expensesThisMonth: number;
   upcomingEventsCount: number;
+  insights: Insight[];
 }
+
+// Cuentas por vencer y tareas atrasadas ya se muestran arriba en "Prioridades de hoy"
+// (son las de prioridad roja); acá solo van las sugerencias que no aparecen en otra parte.
+const UNIQUE_INSIGHT_KINDS = new Set(["habitual_purchase", "schedule_conflict", "unusual_spending"]);
 
 function money(n: number): string {
   return `$${Math.round(n).toLocaleString("es-CL")}`;
@@ -102,6 +115,8 @@ export default function HoyPage() {
     return <p className="text-sm text-muted">Cargando tu día…</p>;
   }
 
+  const suggestions = summary.insights.filter((i) => UNIQUE_INSIGHT_KINDS.has(i.kind));
+
   return (
     <div className="space-y-6">
       <header>
@@ -132,6 +147,23 @@ export default function HoyPage() {
           })}
         </div>
       </section>
+
+      {suggestions.length > 0 && (
+        <section>
+          <h2 className="text-sm font-semibold text-muted mb-2">SUGERENCIAS</h2>
+          <div className="card divide-y">
+            {suggestions.map((s, idx) => (
+              <div key={idx} className="flex items-start gap-2.5 px-4 py-3">
+                <span className={`priority-dot ${s.priority} mt-1`} />
+                <div>
+                  <p className="text-sm font-medium">{s.title}</p>
+                  <p className="text-xs text-muted">{s.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h2 className="text-sm font-semibold text-muted mb-2">FAMILIA</h2>

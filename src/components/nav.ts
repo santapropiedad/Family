@@ -16,7 +16,6 @@ export const SECONDARY_NAV: NavItem[] = [
   { href: "/voz", label: "Familia+ Voz", icon: "🎙️" },
   { href: "/calendario", label: "Calendario", icon: "📅" },
   { href: "/hijos", label: "Hijos", icon: "🎒" },
-  { href: "/inteligencia", label: "Inteligencia", icon: "🧠" },
   { href: "/familia", label: "Familia", icon: "👨‍👩‍👧‍👦" },
   { href: "/inventario-feria", label: "Inventario Feria", icon: "📦" },
   { href: "/inventario-supermercado", label: "Inventario Supermercado", icon: "📦" },
