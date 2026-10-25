@@ -258,9 +258,195 @@ class WebSpeechProvider implements VoiceProvider {
   }
 }
 
+async function transcribeWithGroq(blob: Blob): Promise<string> {
+  const ext = blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "mp4" : "webm";
+  const form = new FormData();
+  form.append("audio", blob, `comando.${ext}`);
+  const res = await fetch("/api/voice/transcribe", { method: "POST", body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error ?? "No pude transcribir el audio.");
+  }
+  const text = (data.text ?? "").trim();
+  if (!text) throw new Error("No escuché nada, intenta de nuevo.");
+  return text;
+}
+
+function getMediaRecorderCtor(): typeof MediaRecorder | null {
+  if (typeof window === "undefined") return null;
+  return window.MediaRecorder ?? null;
+}
+
+/**
+ * Captura del comando de voz (botón del micrófono) vía Groq (Whisper) en vez del reconocimiento
+ * de voz del navegador: graba el audio del micrófono, detecta el silencio para cortar sola, y
+ * manda el audio a /api/voice/transcribe. "Hey Familia" (wake word) y la respuesta hablada (TTS)
+ * siguen siendo locales y gratis en el navegador (delegados a WebSpeechProvider), porque no hay
+ * forma gratuita de hacer eso con Groq.
+ */
+class GroqVoiceProvider implements VoiceProvider {
+  private fallback = new WebSpeechProvider();
+
+  private stream: MediaStream | null = null;
+  private recorder: MediaRecorder | null = null;
+  private chunks: Blob[] = [];
+  private audioCtx: AudioContext | null = null;
+  private silenceRaf: number | null = null;
+  private hardStopTimer: ReturnType<typeof setTimeout> | null = null;
+
+  isSupported(): boolean {
+    return (
+      typeof navigator !== "undefined" &&
+      Boolean(navigator.mediaDevices?.getUserMedia) &&
+      getMediaRecorderCtor() !== null
+    );
+  }
+
+  async startListening(
+    onResult: (text: string, isFinal: boolean) => void,
+    onEnd: () => void,
+    onError: (message: string) => void
+  ): Promise<void> {
+    const Ctor = getMediaRecorderCtor();
+    if (!Ctor || !navigator.mediaDevices?.getUserMedia) {
+      onError("Tu navegador no soporta grabación de audio. Prueba en Chrome o Edge.");
+      return;
+    }
+
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      onError("Necesito permiso para usar el micrófono.");
+      return;
+    }
+    this.stream = stream;
+    this.chunks = [];
+
+    const mimeType = Ctor.isTypeSupported?.("audio/webm") ? "audio/webm" : undefined;
+    const recorder = mimeType ? new Ctor(stream, { mimeType }) : new Ctor(stream);
+    this.recorder = recorder;
+
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) this.chunks.push(e.data);
+    };
+    recorder.onstop = async () => {
+      this.releaseStream();
+      const chunks = this.chunks;
+      this.chunks = [];
+      if (chunks.length === 0) {
+        onEnd();
+        return;
+      }
+      try {
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        const text = await transcribeWithGroq(blob);
+        onResult(text, true);
+      } catch (err) {
+        onError(err instanceof Error ? err.message : "No pude entender el audio.");
+      } finally {
+        onEnd();
+      }
+    };
+
+    recorder.start();
+    this.hardStopTimer = setTimeout(() => this.stopListening(), 20_000); // tope de seguridad
+    this.watchSilence(stream);
+  }
+
+  stopListening(): void {
+    this.stopSilenceWatch();
+    if (this.hardStopTimer) {
+      clearTimeout(this.hardStopTimer);
+      this.hardStopTimer = null;
+    }
+    if (this.recorder && this.recorder.state !== "inactive") {
+      this.recorder.stop();
+    } else {
+      this.releaseStream();
+    }
+  }
+
+  /** Corta la grabación sola tras ~1.2s de silencio, igual que antes hacía el navegador. */
+  private watchSilence(stream: MediaStream): void {
+    if (typeof window === "undefined" || !("AudioContext" in window || "webkitAudioContext" in window)) return;
+    const AudioCtx = (window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext);
+    const audioCtx = new AudioCtx();
+    this.audioCtx = audioCtx;
+    const source = audioCtx.createMediaStreamSource(stream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.fftSize);
+    const startedAt = Date.now();
+    let lastLoudAt = Date.now();
+    const SILENCE_THRESHOLD = 0.02;
+    const SILENCE_MS = 1200;
+    const MIN_RECORDING_MS = 600;
+
+    const tick = () => {
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / data.length);
+      const now = Date.now();
+      if (rms > SILENCE_THRESHOLD) lastLoudAt = now;
+      if (now - startedAt > MIN_RECORDING_MS && now - lastLoudAt > SILENCE_MS) {
+        this.stopListening();
+        return;
+      }
+      this.silenceRaf = requestAnimationFrame(tick);
+    };
+    this.silenceRaf = requestAnimationFrame(tick);
+  }
+
+  private stopSilenceWatch(): void {
+    if (this.silenceRaf !== null) {
+      cancelAnimationFrame(this.silenceRaf);
+      this.silenceRaf = null;
+    }
+    if (this.audioCtx) {
+      this.audioCtx.close().catch(() => {});
+      this.audioCtx = null;
+    }
+  }
+
+  private releaseStream(): void {
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = null;
+    this.recorder = null;
+  }
+
+  speak(text: string, onStart?: () => void, onEnd?: () => void): void | Promise<void> {
+    return this.fallback.speak(text, onStart, onEnd);
+  }
+
+  stopSpeaking(): void {
+    this.fallback.stopSpeaking();
+  }
+
+  startWakeWordListening(
+    onWake: (commandAfterWake: string) => void,
+    onStatusChange: (listening: boolean) => void,
+    onError: (message: string) => void
+  ): void {
+    this.fallback.startWakeWordListening(onWake, onStatusChange, onError);
+  }
+
+  stopWakeWordListening(): void {
+    this.fallback.stopWakeWordListening();
+  }
+}
+
 let provider: VoiceProvider | null = null;
 
 export function getVoiceProvider(): VoiceProvider {
-  if (!provider) provider = new WebSpeechProvider();
+  if (!provider) {
+    const groq = new GroqVoiceProvider();
+    provider = groq.isSupported() ? groq : new WebSpeechProvider();
+  }
   return provider;
 }
