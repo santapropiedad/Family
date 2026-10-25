@@ -17,7 +17,9 @@ Esta skill es la memoria técnica del proyecto **Family** (carpeta `C:\Users\tea
 | **Avisos con la app cerrada** | **Web Push** nativo del navegador (no Outlook, no email, no SMS) | Gratis, sin cuenta de terceros; `src/services/push.ts` + `public/sw.js` |
 | **Quién revisa las alarmas cada minuto** | **cron-job.org** (externo, gratis) llamando a `/api/cron/check-alarms` | El cron propio de Vercel en el plan Hobby **solo corre una vez al día** (confirmado con los docs oficiales de Vercel, enero 2026) — insuficiente para avisar 15 min antes / 10 min después de vencer una tarea |
 | **Lector de boletas** | **Tabscanner API v2** (`api3.tabscanner.com`, gratis hasta 200 boletas/mes, sin tarjeta) | OCR de boletas de supermercado — ver `src/services/receipts.ts`. Sube la foto, consulta el resultado (polling), y el usuario confirma antes de guardar nada |
-| **Asistente de voz** | **Web Speech API** del navegador (gratis, sin servicio de voz pago) | `SpeechRecognition` para escuchar, `speechSynthesis` para hablar; motor de reglas local (`src/ai/rules.ts`) interpreta comandos sin necesitar `ANTHROPIC_API_KEY` |
+| **Comando de voz (transcripción)** | **Groq** (Whisper `whisper-large-v3-turbo`, gratis) | `src/lib/voice.ts` (`GroqVoiceProvider`) graba el audio y lo manda a `/api/voice/transcribe`; mucho más confiable que el reconocimiento del navegador, sobre todo en celular |
+| **"Hey Familia" (wake word) y respuesta hablada (TTS)** | **Web Speech API** del navegador (gratis) | Siguen siendo locales a propósito — no hay forma gratuita de escuchar en segundo plano todo el tiempo con una API, y Groq no tiene voz confiable en español. `WebSpeechProvider` en `src/lib/voice.ts` |
+| **El "cerebro" (entender el pedido y decidir qué hacer)** | Motor de reglas local (`src/ai/rules.ts`), **no Claude** | `ANTHROPIC_API_KEY` está deliberadamente sin configurar — decisión de costo del usuario (ver "Otras trampas" abajo). Si se configura esa clave, usa `claude-sonnet-4-5` en su lugar (`src/ai/claude.ts`) sin tocar nada más |
 
 ## Mapa de archivos clave
 
@@ -26,6 +28,8 @@ Esta skill es la memoria técnica del proyecto **Family** (carpeta `C:\Users\tea
 - `src/services/alarms.ts` — `checkTaskAlarms` (usado por el polling del navegador) y `checkAndPushTaskAlarms` / `checkAllFamiliesTaskAlarms` (usados por el cron externo; estos SÍ envían push).
 - `src/app/api/cron/check-alarms/route.ts` — endpoint que llama cron-job.org, protegido con `CRON_SECRET` (header `x-cron-secret` o `?secret=`).
 - `src/services/push.ts` + `public/sw.js` — suscripciones Web Push y el service worker que muestra la notificación nativa.
+- `src/components/NotificationsBell.tsx` — panel de la campanita (🔔): historial de avisos + estado real de los avisos push en este dispositivo, con botón para (re)activarlos en cualquier momento (no solo en el cartel de la primera vez).
+- `src/lib/voice.ts` + `src/ai/groqVoice.ts` + `src/app/api/voice/transcribe/route.ts` — captura de voz (Groq Whisper) separada del "cerebro" (Claude/reglas); ver sección de arquitectura arriba.
 - `.env.example` — lista todas las variables con comentarios; es la fuente de verdad de qué configurar en Vercel.
 - `src/app/globals.css` (`@media (max-width: 480px) { html { font-size: 15px; } }`) + `src/components/AppShell.tsx` — compactación para celular: un solo cambio de tamaño base en vez de tocar cada pantalla.
 
@@ -38,8 +42,9 @@ VAPID_PUBLIC_KEY=<generada con: npx web-push generate-vapid-keys>
 VAPID_PRIVATE_KEY=<idem>
 VAPID_CONTACT_EMAIL=<correo de contacto>
 CRON_SECRET=<string aleatorio largo>
-ANTHROPIC_API_KEY=<opcional — sin ella, el asistente usa el motor de reglas local>
+ANTHROPIC_API_KEY=<opcional — sin ella, el asistente usa el motor de reglas local. Deliberadamente SIN configurar por ahora (decisión de costo del usuario, 25 oct 2026) — no sugerir activarla salvo que el usuario lo pida>
 TABSCANNER_API_KEY=<opcional — sin ella, "Leer boleta" muestra un aviso en vez de fallar>
+GROQ_API_KEY=<gratis en console.groq.com/keys — usada SOLO para transcribir voz (Whisper); sin ella el micrófono falla al transcribir, no hay otro fallback>
 ```
 
 ## Decisiones de arquitectura y el porqué
@@ -73,6 +78,11 @@ Para cambios futuros al código: tú (Claude) haces `git add` + `git commit` loc
 - **GitHub Desktop puede mostrar "Fetch origin" en vez de "Push origin" aunque haya commits sin subir**, si el usuario ya los había subido por otra vía (o en una interacción anterior) y el panel no se refrescó todavía — no asumas que "no aparece el botón Push" significa que algo salió mal; compará el hash del último commit local (`git log --oneline -1`) contra el que se ve en GitHub antes de alarmar al usuario.
 - **"Hoy" dividido por integrante: terminó en un diseño distinto al primero que se probó.** El usuario pidió varias veces reacomodar esto (ver commits del 18-19 oct); el diseño final y definitivo es: "PRIORIDADES DE HOY" mezcla lo propio del adulto + lo sin asignar + lo de cualquier hijo, con el nombre del hijo como etiqueta al lado de cada ítem (`childOwnerName()` en `src/app/page.tsx`, cruza `tasks` por id ya que `summary.priorities` no trae el assignee) — pero la sección "Tareas/Eventos" (con el selector Día/Semana/Mes) muestra *solo* lo propio del usuario que inició sesión, sin mezclar lo de los hijos ahí. No tiene nada que ver con qué usuario es (Juan o Teany) — es por **rol** (`admin`/`adult` ven a los hijos, `child` no), así que nunca hace falta "repetir" esta configuración para otro adulto.
 - **El asistente de voz gratis solo entiende las frases que están en `src/ai/rules.ts`**, no lenguaje libre — es la naturaleza de un motor de reglas determinista, no un bug. Si el usuario reporta que "no entiende ciertas frases", la respuesta correcta es pedirle la frase exacta que probó y agregar un nuevo patrón de regex, no prometer comprensión abierta (eso requeriría `ANTHROPIC_API_KEY`, que tiene costo).
+- **El usuario decidió, consciente del costo, quedarse en modo reglas (sin `ANTHROPIC_API_KEY`) y también rechazó la alternativa gratis de usar el LLM de Groq como "cerebro"** (25 oct 2026) — Groq se usa únicamente para transcribir voz (STT), nunca para interpretar el pedido. No ofrecer de nuevo cambiar el cerebro salvo que el usuario lo pida él mismo; si pide que el asistente "entienda más cosas", la respuesta es ampliar `src/ai/rules.ts`, no cambiar de motor.
+- **Antes de agregar un ícono/pantalla nueva al menú, pensar si cabe mejor como comando de Family IA o como parte de una pantalla ya existente.** Se construyó una pantalla "Cuentas" completa (con su propio ícono) y el usuario pidió sacarla por duplicar con "Control de Gastos" — la función (eliminar una cuenta) se volvió a exponer, pero como comando de chat/voz (`delete_bill`), sin pantalla propia. Mismo patrón con "Inteligencia": se eliminó el ícono/pantalla aparte y sus avisos únicos se fusionaron dentro de "Hoy". El usuario valora un menú corto y sin duplicados por sobre tener una pantalla dedicada para todo.
+- **El gusto visual de una función nueva no está garantizado aunque funcione perfecto.** Se agregó un botón "+ Categoría" en Gastos, totalmente funcional y probado, y el usuario pidió revertirlo solo porque "no me gustó como quedó" — se revirtió limpio (incluyendo el endpoint/schema que había quedado sin uso). Para agregados de UI chicos/opcionales, está bien mostrarlos directo en vez de sobre-pensar el diseño, pero conviene mantener el cambio aislado (componente/ruta propia) para poder revertirlo fácil si no convence.
+- **Existe una cuenta demo (`demo@familiaplus.cl`, ver `src/db/seed.ts`) sembrada también en la base de datos REAL de producción**, no solo en desarrollo local — causó que el usuario confundiera datos de ejemplo (una cuenta "Electricidad"/"Agua" con el mismo proveedor "Aguas Andinas" de la semilla) con datos reales de su familia. Si reporta ver algo genérico o que no reconoce, primero verificar si puede estar en la cuenta demo (el encabezado dice "Familia Fernández (demo)") antes de investigar un bug de datos.
+- **El manifiesto de la PWA (`src/app/manifest.ts`) se sirve en `/manifest.webmanifest` por convención de Next.js, no en `/manifest.json`** — un `layout.tsx` que apunte al nombre equivocado deja a Chrome sin forma de detectar que la app es instalable (sin error visible, simplemente nunca aparece "Instalar app"). Más sutil todavía: el `matcher` de `middleware.ts` (que redirige a `/login` sin sesión) debe excluir el nombre *real* del archivo (`manifest.webmanifest`) — excluir el nombre viejo/equivocado no sirve de nada, porque Chrome pide el manifiesto sin enviar la cookie de sesión, así que si el middleware lo intercepta, entrega el HTML de `/login` en vez del manifiesto, y la instalación falla en silencio otra vez. Verificar ambas cosas juntas si "Instalar app" no aparece.
 
 ## El paso a paso completo para guiar al usuario
 
@@ -89,3 +99,12 @@ mismo tono para explicárselo al usuario está en **`references/funcionalidades-
 "Hoy" dividido por integrante (diseño final arriba, en "Otras trampas"), ícono de la app
 reemplazado por el del usuario, y la corrección del lector de boletas con líneas de descuento —
 el detalle y el paso a paso están en **`references/funcionalidades-2026-10-19.md`**.
+
+## Cambios del 25 de octubre de 2026
+
+Comando de voz migrado a Groq (solo transcripción, un solo toque para hablar), decisión consciente
+del usuario de quedarse sin `ANTHROPIC_API_KEY` ampliando el motor de reglas en su lugar, "Cuentas"
+e "Inteligencia" sacadas del menú (fusionadas en Hoy / movidas a comandos de chat), tareas atrasadas
+ya no se repiten en "Hoy", botón "Editar" unificado en Casa en Orden, y la campanita de Avisos ahora
+permite revisar/reactivar los avisos push en cualquier momento — el detalle completo está en
+**`references/funcionalidades-2026-10-25.md`**.
