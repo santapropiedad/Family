@@ -100,7 +100,45 @@ nombre, mismo proveedor "Aguas Andinas"). **Si el usuario reporta datos genéric
 reconoce, revisar primero si puede estar en la cuenta demo** (se distingue porque el encabezado
 dice "Familia Fernández (demo)") antes de asumir un bug de datos.
 
-## 8. Variable de entorno nueva
+## 8. Family IA: muchos más comandos por módulo (posponer, reprogramar, editar)
+
+El usuario pidió explícitamente cubrir "cada una de las aplicaciones" (módulos) con combinaciones
+de agregar/eliminar/editar/consultar/reprogramar/posponer/cambiar fecha/cambiar hora. Se amplió
+bastante tanto `src/ai/tools.ts` (nuevas herramientas) como `src/ai/rules.ts` (nuevos patrones):
+
+- **Tareas/Eventos/Recordatorios**: posponer N minutos/horas/días (`postpone_task`,
+  `postpone_event`, `postpone_reminder` — reutilizan `postponeDue` de `src/lib/taskTime.ts` para
+  tareas, y la misma lógica inline para eventos/recordatorios ya que esos usan un timestamp único
+  en vez de fecha+hora separadas), cambiar fecha, cambiar hora, cambiar título/lugar
+  (`update_task`, `update_event`, `update_reminder`).
+- **Cuentas**: `create_bill` (agregar una cuenta nueva) y un patrón de voz para `pay_bill` (ya
+  existía la herramienta, pero no había forma de decirle "paga la cuenta de X" — solo se podía
+  pagar desde dentro del código, nunca se había expuesto).
+- **Mantenciones**: patrón de voz para `create_maintenance` (ya existía la herramienta, mismo caso
+  que `pay_bill`) y `delete_maintenance` nuevo.
+- **Gastos**: `delete_expense` nuevo.
+- **"ingresa" como sinónimo de "agrega"/"crea"** en los módulos donde correspondía.
+
+### Dos bugs de regex encontrados probando (antes de subir, no después)
+
+- **Las conjugaciones con tilde ("pospón") no coinciden con un patrón que solo escribe la versión
+  sin tilde ("pospon")**: a diferencia de `parseRelativeDate`/`parseQuantityItem` en
+  `src/ai/parsing.ts`, que le quitan los acentos al texto antes de comparar (`stripAccents`), los
+  patrones nuevos de `rules.ts` comparan `text.toLowerCase()` directo, que conserva tildes. Si se
+  agrega un patrón nuevo con una palabra que lleva tilde en alguna de sus conjugaciones (como
+  "pospón"), hay que escribir **ambas** formas en el regex (`posp[oó]n`) o pasar por
+  `stripAccents` primero — no alcanza con poner la palabra "tal cual se ve escrita" una sola vez.
+- **Un `(?!...)` (negative lookahead) para excluir "agrega una tarea/evento/cuenta/..." de caer en
+  el patrón genérico de "agregar a la lista de compras" solo contemplaba el artículo "un/una", no
+  "el/la"** — por eso "agrega **la** cuenta de luz..." se colaba igual como si fuera un producto de
+  supermercado. Si se agrega una nueva exclusión de este tipo, probar con los dos artículos (y sin
+  artículo) antes de dar por buena la regla.
+
+Moraleja repetida de sesiones anteriores: **probar cada patrón nuevo de verdad (vía
+`fetch('/api/ai/chat', ...)` en el navegador de pruebas, o similar) antes de subir** — ambos bugs
+se encontraron así, no leyendo el código.
+
+## 9. Variable de entorno nueva
 
 ```
 GROQ_API_KEY=<gratis en console.groq.com/keys — usada solo para transcribir voz (Whisper)>
