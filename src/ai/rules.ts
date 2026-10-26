@@ -19,6 +19,31 @@ function money(n: number): string {
   return `$${Math.round(n).toLocaleString("es-CL")}`;
 }
 
+/** "15 minutos" / "2 horas" / "media hora" / "una hora" / "un día" / "3 días" -> minutos. */
+function parseMinutesPhrase(text: string): number | null {
+  const lower = text.toLowerCase();
+  const numMatch = lower.match(/(\d+)\s*(minutos?|horas?|d[ií]as?)/);
+  if (numMatch) {
+    const n = parseInt(numMatch[1], 10);
+    if (/hora/.test(numMatch[2])) return n * 60;
+    if (/d[ií]a/.test(numMatch[2])) return n * 1440;
+    return n;
+  }
+  if (/media\s+hora/.test(lower)) return 30;
+  if (/\buna?\s+hora\b/.test(lower)) return 60;
+  if (/\bun\s+d[ií]a\b/.test(lower)) return 1440;
+  return null;
+}
+
+/** Busca por coincidencia parcial de nombre/título en cualquiera de los dos sentidos. */
+function findByName<T>(items: T[], target: string, nameOf: (item: T) => string): T | undefined {
+  const lowerTarget = target.toLowerCase().trim();
+  return items.find((i) => {
+    const name = nameOf(i).toLowerCase();
+    return name.includes(lowerTarget) || lowerTarget.includes(name);
+  });
+}
+
 /**
  * Motor de reglas: interpreta los comandos de voz/texto más comunes (sección 23 de la
  * especificación) sin necesidad de un modelo de lenguaje. Se usa automáticamente cuando
@@ -141,6 +166,24 @@ export async function handleWithRules(
     return { reply, action };
   }
 
+  // "Elimina el gasto de supermercado" / "borra el gasto de transporte" (busca entre los últimos 20)
+  const deleteExpenseMatch = lower.match(/(?:elimina(?:r)?|borra(?:r)?)\s+el\s+gasto\s+(?:de\s+)?(.+)/);
+  if (deleteExpenseMatch) {
+    const target = deleteExpenseMatch[1].trim();
+    const listAction = await executeTool(ctx, "list_expenses", { limit: 20 }, conversationId);
+    const expenses =
+      (listAction.result as Array<{ id: string; description: string | null; merchant: string | null }>) ?? [];
+    const match = findByName(expenses, target, (e) => e.description || e.merchant || "");
+    if (!match) {
+      return { reply: `No encontré ningún gasto reciente que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "delete_expense", { expense_id: match.id }, conversationId);
+    return {
+      reply: action.status === "pending_confirmation" ? action.confirmationMessage! : "Eliminé ese gasto.",
+      action,
+    };
+  }
+
   // "Gasté 20 mil pesos en supermercado" / "registré 15 mil pesos de supermercado"
   const spendMatch = lower.match(/(?:gast[eé]|registr[eé])\s+(.+?)\s+(?:en|de)\s+(.+)/);
   if (spendMatch) {
@@ -180,9 +223,14 @@ export async function handleWithRules(
   }
 
   // "Agrega leche" / "agrega tres kilos de arroz" / "agrega leche a las compras" /
-  // "agrega leche a la lista del supermercado" / "agrega pan a la feria"
-  if (/^agrega(r)?\b/.test(lower)) {
-    const withoutVerb = lower.replace(/^agrega(r)?\s+/, "");
+  // "agrega leche a la lista del supermercado" / "agrega pan a la feria" / "ingresa leche a la lista"
+  // (excluye "agrega una tarea/evento/recordatorio/cuenta/mantención", que tienen sus propios patrones).
+  if (
+    /^(?:agrega(?:r)?|ingresa(?:r)?)\b(?!\s+(?:(?:el|la|los|las|una?)\s+)?(?:tarea|evento|recordatorio|cuenta|mantenci[oó]n)\b)/.test(
+      lower
+    )
+  ) {
+    const withoutVerb = lower.replace(/^(agrega(r)?|ingresa(r)?)\s+/, "");
     const store = /\bferia\b/.test(withoutVerb) ? "Feria" : /\bsupermercado\b/.test(withoutVerb) ? "Supermercado" : null;
     // Corta cualquier remate tipo "a la lista", "a las compras", "a la feria", "al supermercado"
     // (con lo que venga después, ej. "del supermercado") para no incluirlo en el nombre del producto.
@@ -252,6 +300,72 @@ export async function handleWithRules(
     return { reply: `Eliminé el recordatorio "${match.title}".`, action };
   }
 
+  // "Pospón el recordatorio de pagar internet 15 minutos" / "posterga el recordatorio X una hora"
+  const postponeReminderMatch = lower.match(
+    /(?:pospo(?:n|ne)(?:r)?|posp[oó]n|posterga(?:r)?)\s+el\s+recordatorio\s+(?:de\s+)?(.+?)\s+(\d+\s*(?:minutos?|horas?|d[ií]as?)|media\s+hora|una?\s+hora|un\s+d[ií]a)\s*$/
+  );
+  if (postponeReminderMatch) {
+    const target = postponeReminderMatch[1].trim();
+    const minutes = parseMinutesPhrase(postponeReminderMatch[2])!;
+    const listAction = await executeTool(ctx, "list_reminders", { status: "pending" }, conversationId);
+    const reminders = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+    const match = findByName(reminders, target, (r) => r.title);
+    if (!match) {
+      return { reply: `No encontré ningún recordatorio pendiente que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "postpone_reminder", { reminder_id: match.id, minutes }, conversationId);
+    return { reply: `Pospuse el recordatorio "${match.title}".`, action };
+  }
+
+  // "Cambia la fecha del recordatorio de pagar internet para mañana" / "reprograma el recordatorio X al viernes"
+  const rescheduleReminderMatch = lower.match(
+    /(?:reprograma(?:r)?|cambia(?:r)?\s+la\s+fecha\s+del?)\s+(?:el\s+)?recordatorio\s+(?:de\s+)?(.+)/
+  );
+  if (rescheduleReminderMatch) {
+    const rest = rescheduleReminderMatch[1];
+    const date = parseRelativeDate(rest);
+    if (date) {
+      const time = parseTimeOfDay(rest) ?? "09:00:00";
+      const target = rest
+        .replace(/\ba\s+las?\s+.+$/i, "")
+        .replace(/\s+(?:para|al)\s+.*$/i, "")
+        .trim();
+      const listAction = await executeTool(ctx, "list_reminders", { status: "pending" }, conversationId);
+      const reminders = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+      const match = findByName(reminders, target, (r) => r.title);
+      if (!match) {
+        return { reply: `No encontré ningún recordatorio pendiente que coincida con "${target}".`, action: listAction };
+      }
+      const action = await executeTool(
+        ctx,
+        "update_reminder",
+        { reminder_id: match.id, remind_at: `${date}T${time}` },
+        conversationId
+      );
+      return { reply: `Reprogramé el recordatorio "${match.title}" para el ${date} a las ${time.slice(0, 5)}.`, action };
+    }
+  }
+
+  // "Cambia el recordatorio de pagar internet a pagar el gas" (cambia el texto)
+  const renameReminderMatch = lower.match(/cambia(?:r)?\s+el\s+recordatorio\s+(?:de\s+)?(.+?)\s+a\s+(.+)/);
+  if (renameReminderMatch) {
+    const target = renameReminderMatch[1].trim();
+    const newTitle = renameReminderMatch[2].trim();
+    const listAction = await executeTool(ctx, "list_reminders", { status: "pending" }, conversationId);
+    const reminders = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+    const match = findByName(reminders, target, (r) => r.title);
+    if (!match) {
+      return { reply: `No encontré ningún recordatorio pendiente que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(
+      ctx,
+      "update_reminder",
+      { reminder_id: match.id, title: newTitle },
+      conversationId
+    );
+    return { reply: `Cambié el recordatorio a "${newTitle}".`, action };
+  }
+
   // "¿Qué recordatorios tengo?"
   if (/qu[eé]\s+recordatorios?\b/.test(lower)) {
     const action = await executeTool(ctx, "list_reminders", { status: "pending" }, conversationId);
@@ -281,11 +395,85 @@ export async function handleWithRules(
     };
   }
 
-  // "Crea una tarea para limpiar la cocina" (genérica, sin asignar a nadie en particular)
-  const createTaskMatch = lower.match(/^crea(r)?\s+una\s+tarea\s+(?:para\s+)?(.+)/);
+  // "Crea una tarea para limpiar la cocina" / "agrega una tarea de..." / "ingresa una tarea para..."
+  // (genérica, sin asignar a nadie en particular)
+  const createTaskMatch = lower.match(/^(?:crea(?:r)?|agrega(?:r)?|ingresa(?:r)?)\s+una\s+tarea\s+(?:para\s+|de\s+)?(.+)/);
   if (createTaskMatch) {
-    const action = await executeTool(ctx, "create_task", { title: createTaskMatch[2].trim() }, conversationId);
-    return { reply: `Creé la tarea "${createTaskMatch[2].trim()}".`, action };
+    const action = await executeTool(ctx, "create_task", { title: createTaskMatch[1].trim() }, conversationId);
+    return { reply: `Creé la tarea "${createTaskMatch[1].trim()}".`, action };
+  }
+
+  // "Pospón la tarea de sacar la basura 15 minutos" / "posterga la tarea X una hora" / "reprograma la tarea X un día"
+  const postponeTaskMatch = lower.match(
+    /(?:pospo(?:n|ne)(?:r)?|posp[oó]n|posterga(?:r)?|reprograma(?:r)?)\s+la\s+tarea\s+(?:de\s+)?(.+?)\s+(\d+\s*(?:minutos?|horas?|d[ií]as?)|media\s+hora|una?\s+hora|un\s+d[ií]a)\s*$/
+  );
+  if (postponeTaskMatch) {
+    const target = postponeTaskMatch[1].trim();
+    const minutes = parseMinutesPhrase(postponeTaskMatch[2])!;
+    const listAction = await executeTool(ctx, "list_tasks", { status: "pending" }, conversationId);
+    const tasks = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+    const match = findByName(tasks, target, (t) => t.title);
+    if (!match) {
+      return { reply: `No encontré ninguna tarea pendiente que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "postpone_task", { task_id: match.id, minutes }, conversationId);
+    return { reply: `Pospuse "${match.title}".`, action };
+  }
+
+  // "Cambia la fecha de la tarea de sacar la basura para mañana" / "reprograma la tarea X al viernes"
+  const rescheduleTaskDateMatch = lower.match(
+    /(?:cambia(?:r)?\s+la\s+fecha\s+de\s+|reprograma(?:r)?\s+)la\s+tarea\s+(?:de\s+)?(.+)/
+  );
+  if (rescheduleTaskDateMatch) {
+    const rest = rescheduleTaskDateMatch[1];
+    const date = parseRelativeDate(rest);
+    if (date) {
+      const target = rest.replace(/\s+(?:a|para|al)\s+.*$/i, "").trim();
+      const listAction = await executeTool(ctx, "list_tasks", { status: "pending" }, conversationId);
+      const tasks = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+      const match = findByName(tasks, target, (t) => t.title);
+      if (!match) {
+        return { reply: `No encontré ninguna tarea pendiente que coincida con "${target}".`, action: listAction };
+      }
+      const action = await executeTool(ctx, "update_task", { task_id: match.id, due_date: date }, conversationId);
+      return { reply: `Cambié la fecha de "${match.title}" al ${date}.`, action };
+    }
+  }
+
+  // "Cambia la hora de la tarea de sacar la basura a las 5"
+  const rescheduleTaskTimeMatch = lower.match(/cambia(?:r)?\s+la\s+hora\s+de\s+la\s+tarea\s+(?:de\s+)?(.+)/);
+  if (rescheduleTaskTimeMatch) {
+    const rest = rescheduleTaskTimeMatch[1];
+    const time = parseTimeOfDay(rest);
+    if (!time) {
+      return { reply: "¿A qué hora quieres cambiarla? Dime, por ejemplo 'a las 5 de la tarde'." };
+    }
+    const target = rest.replace(/\s+a\s+las?\s+.*$/i, "").trim();
+    const listAction = await executeTool(ctx, "list_tasks", { status: "pending" }, conversationId);
+    const tasks = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+    const match = findByName(tasks, target, (t) => t.title);
+    if (!match) {
+      return { reply: `No encontré ninguna tarea pendiente que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "update_task", { task_id: match.id, due_time: time }, conversationId);
+    return { reply: `Cambié la hora de "${match.title}" a las ${time.slice(0, 5)}.`, action };
+  }
+
+  // "Cambia el título de la tarea de sacar la basura a sacar el reciclaje" / "renombra la tarea X a Y"
+  const renameTaskMatch = lower.match(
+    /(?:cambia(?:r)?\s+el\s+t[ií]tulo\s+de\s+la\s+tarea\s+(?:de\s+)?|renombra(?:r)?\s+la\s+tarea\s+(?:de\s+)?)(.+?)\s+a\s+(.+)/
+  );
+  if (renameTaskMatch) {
+    const target = renameTaskMatch[1].trim();
+    const newTitle = renameTaskMatch[2].trim();
+    const listAction = await executeTool(ctx, "list_tasks", { status: "pending" }, conversationId);
+    const tasks = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+    const match = findByName(tasks, target, (t) => t.title);
+    if (!match) {
+      return { reply: `No encontré ninguna tarea pendiente que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "update_task", { task_id: match.id, title: newTitle }, conversationId);
+    return { reply: `Cambié el título de "${match.title}" a "${newTitle}".`, action };
   }
 
   // "Marca como completada la tarea de sacar la basura"
@@ -366,10 +554,10 @@ export async function handleWithRules(
     return { reply, action };
   }
 
-  // "Crea un evento para el sábado a las diez de la mañana"
-  const createEventMatch = lower.match(/^crea(r)?\s+un\s+evento\s+(?:de\s+)?(.+)/);
+  // "Crea un evento para el sábado a las diez de la mañana" / "agrega un evento..." / "ingresa un evento..."
+  const createEventMatch = lower.match(/^(?:crea(?:r)?|agrega(?:r)?|ingresa(?:r)?)\s+un\s+evento\s+(?:de\s+)?(.+)/);
   if (createEventMatch) {
-    const body = createEventMatch[2];
+    const body = createEventMatch[1];
     const date = parseRelativeDate(body);
     if (!date) {
       return { reply: "¿Para qué día es el evento? Dime una fecha, por ejemplo 'el sábado' o 'mañana'." };
@@ -416,6 +604,95 @@ export async function handleWithRules(
     return { reply: `Eliminé el evento "${match.title}".`, action };
   }
 
+  // "Pospón el evento de la reunión 30 minutos" / "posterga el evento X una hora"
+  const postponeEventMatch = lower.match(
+    /(?:pospo(?:n|ne)(?:r)?|posp[oó]n|posterga(?:r)?)\s+el\s+evento\s+(?:de\s+)?(.+?)\s+(\d+\s*(?:minutos?|horas?|d[ií]as?)|media\s+hora|una?\s+hora|un\s+d[ií]a)\s*$/
+  );
+  if (postponeEventMatch) {
+    const target = postponeEventMatch[1].trim();
+    const minutes = parseMinutesPhrase(postponeEventMatch[2])!;
+    const now = new Date();
+    const listAction = await executeTool(
+      ctx,
+      "list_events",
+      { from: now.toISOString(), to: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString() },
+      conversationId
+    );
+    const events = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+    const match = findByName(events, target, (e) => e.title);
+    if (!match) {
+      return { reply: `No encontré ningún evento próximo que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "postpone_event", { event_id: match.id, minutes }, conversationId);
+    return { reply: `Pospuse el evento "${match.title}".`, action };
+  }
+
+  // "Reprograma el evento de la reunión para mañana a las 5" / "cambia la fecha del evento X al viernes"
+  const rescheduleEventMatch = lower.match(
+    /(?:reprograma(?:r)?|cambia(?:r)?\s+la\s+fecha\s+del?)\s+(?:el\s+)?evento\s+(?:de\s+)?(.+)/
+  );
+  if (rescheduleEventMatch) {
+    const rest = rescheduleEventMatch[1];
+    const date = parseRelativeDate(rest);
+    if (date) {
+      const time = parseTimeOfDay(rest) ?? "09:00:00";
+      const target = rest
+        .replace(/\ba\s+las?\s+.+$/i, "")
+        .replace(/\s+(?:para|al)\s+.*$/i, "")
+        .trim();
+      const now = new Date();
+      const listAction = await executeTool(
+        ctx,
+        "list_events",
+        { from: now.toISOString(), to: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString() },
+        conversationId
+      );
+      const events = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+      const match = findByName(events, target, (e) => e.title);
+      if (!match) {
+        return { reply: `No encontré ningún evento próximo que coincida con "${target}".`, action: listAction };
+      }
+      const action = await executeTool(
+        ctx,
+        "update_event",
+        { event_id: match.id, start_at: `${date}T${time}` },
+        conversationId
+      );
+      return { reply: `Reprogramé "${match.title}" para el ${date} a las ${time.slice(0, 5)}.`, action };
+    }
+  }
+
+  // "Cambia el título del evento de la reunión a junta de apoderados" / "cambia el lugar del evento X a Y"
+  const editEventMatch = lower.match(
+    /cambia(?:r)?\s+el\s+(t[ií]tulo|lugar)\s+del?\s+evento\s+(?:de\s+)?(.+?)\s+a\s+(.+)/
+  );
+  if (editEventMatch) {
+    const field = editEventMatch[1];
+    const target = editEventMatch[2].trim();
+    const newValue = editEventMatch[3].trim();
+    const now = new Date();
+    const listAction = await executeTool(
+      ctx,
+      "list_events",
+      { from: now.toISOString(), to: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString() },
+      conversationId
+    );
+    const events = (listAction.result as Array<{ id: string; title: string }>) ?? [];
+    const match = findByName(events, target, (e) => e.title);
+    if (!match) {
+      return { reply: `No encontré ningún evento próximo que coincida con "${target}".`, action: listAction };
+    }
+    const params = field.startsWith("t") ? { title: newValue } : { location: newValue };
+    const action = await executeTool(ctx, "update_event", { event_id: match.id, ...params }, conversationId);
+    return {
+      reply:
+        field.startsWith("t")
+          ? `Cambié el título a "${newValue}".`
+          : `Cambié el lugar de "${match.title}" a "${newValue}".`,
+      action,
+    };
+  }
+
   // "¿Qué falta comprar?" / "¿qué tenemos que comprar?"
   if (/falta comprar|qu[eé] (tenemos|hay) que comprar|lista de compras/.test(lower)) {
     const action = await executeTool(ctx, "list_shopping_items", { status: "pending" }, conversationId);
@@ -458,6 +735,56 @@ export async function handleWithRules(
         ? "No tienes cuentas pendientes."
         : `Cuentas pendientes: ${bills.map((b) => `${b.name} (${money(Number(b.amount))}, vence ${b.due_date})`).join("; ")}.`;
     return { reply, action };
+  }
+
+  // "Agrega la cuenta de luz por $50.000 que vence el 10" / "ingresa la cuenta de internet, 20 mil, vence mañana"
+  const createBillMatch = lower.match(
+    /(?:agrega(?:r)?|ingresa(?:r)?|registra(?:r)?)\s+la\s+cuenta\s+(?:de|del)\s+(.+)/
+  );
+  if (createBillMatch) {
+    const rest = createBillMatch[1];
+    const amount = parseAmount(rest);
+    const date = parseRelativeDate(rest);
+    if (amount && date) {
+      const name = rest
+        .replace(/\bpor\b/gi, "")
+        .replace(/\$?\s*\d[\d.,]*\s*(mil\s*(pesos|lucas)?|pesos)?/gi, "")
+        .replace(/\b(que\s+)?vence\s+(el\s+)?.*/i, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const billName = name || rest.trim();
+      const action = await executeTool(
+        ctx,
+        "create_bill",
+        { name: billName, amount, due_date: date },
+        conversationId
+      );
+      return { reply: `Agregué la cuenta de "${billName}" por ${money(amount)}, vence el ${date}.`, action };
+    }
+    return {
+      reply:
+        "Necesito el monto y la fecha de vencimiento, por ejemplo: \"agrega la cuenta de luz por $50.000 que vence el 10\".",
+    };
+  }
+
+  // "Paga la cuenta de luz" / "marca como pagada la cuenta de agua"
+  const payBillMatch = lower.match(/(?:paga(?:r)?|marca(?:r)?\s+como\s+pagada)\s+la\s+cuenta\s+(?:de|del)\s+(.+)/);
+  if (payBillMatch) {
+    const target = payBillMatch[1].trim();
+    const listAction = await executeTool(ctx, "list_bills", { status: "pending" }, conversationId);
+    const bills = (listAction.result as Array<{ id: string; name: string }>) ?? [];
+    const match = findByName(bills, target, (b) => b.name);
+    if (!match) {
+      return { reply: `No encontré ninguna cuenta pendiente que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "pay_bill", { bill_id: match.id }, conversationId);
+    return {
+      reply:
+        action.status === "pending_confirmation"
+          ? action.confirmationMessage!
+          : `Marqué "${match.name}" como pagada.`,
+      action,
+    };
   }
 
   // "Elimina la cuenta de luz" / "borra la cuenta del agua" / "cancela la cuenta de internet"
@@ -510,8 +837,56 @@ export async function handleWithRules(
     };
   }
 
+  // "Agrega una mantención para la piscina" / "ingresa la mantención del calefont cada 90 días"
+  const createMaintenanceMatch = lower.match(
+    /(?:agrega(?:r)?|ingresa(?:r)?|registra(?:r)?)\s+(?:una\s+)?mantenci[oó]n\s+(?:para|de|del)\s+(?:el\s+|la\s+)?(.+)/
+  );
+  if (createMaintenanceMatch) {
+    const rest = createMaintenanceMatch[1];
+    const date = parseRelativeDate(rest);
+    const frequencyMatch = rest.match(/cada\s+(\d+)\s*d[ií]as?/);
+    const name = rest
+      .replace(/\bcada\s+\d+\s*d[ií]as?\b/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const billName = name || rest.trim();
+    const action = await executeTool(
+      ctx,
+      "create_maintenance",
+      {
+        name: billName,
+        next_maintenance_at: date ?? undefined,
+        frequency_days: frequencyMatch ? parseInt(frequencyMatch[1], 10) : undefined,
+      },
+      conversationId
+    );
+    return { reply: `Agregué "${billName}" a las mantenciones de la casa.`, action };
+  }
+
+  // "Elimina la mantención de la piscina" / "borra la mantención del calefont"
+  const deleteMaintenanceMatch = lower.match(
+    /(?:elimina(?:r)?|borra(?:r)?)\s+la\s+mantenci[oó]n\s+(?:de|del)\s+(.+)/
+  );
+  if (deleteMaintenanceMatch) {
+    const target = deleteMaintenanceMatch[1].trim();
+    const listAction = await executeTool(ctx, "list_maintenance", {}, conversationId);
+    const items = (listAction.result as Array<{ id: string; name: string }>) ?? [];
+    const match = findByName(items, target, (i) => i.name);
+    if (!match) {
+      return { reply: `No encontré ninguna mantención que coincida con "${target}".`, action: listAction };
+    }
+    const action = await executeTool(ctx, "delete_maintenance", { maintenance_id: match.id }, conversationId);
+    return {
+      reply:
+        action.status === "pending_confirmation"
+          ? action.confirmationMessage!
+          : `Eliminé la mantención de "${match.name}".`,
+      action,
+    };
+  }
+
   return {
     reply:
-      "No entendí ese pedido. Puedo ayudarte con cosas como: registrar o consultar gastos, agregar o quitar productos de la lista de compras, ver cuánto queda de algo, crear, completar o eliminar tareas, crear o eliminar eventos y recordatorios, y revisar cuentas o mantenciones. Intenta decírmelo con esas palabras.",
+      "No entendí ese pedido. Puedo ayudarte con cosas como: crear, completar, posponer, reprogramar, renombrar o eliminar tareas, eventos y recordatorios; agregar, quitar o consultar productos de la lista de compras; registrar, consultar o eliminar gastos; agregar, pagar o eliminar cuentas del hogar; y agregar, consultar o eliminar mantenciones. Intenta decírmelo con esas palabras.",
   };
 }

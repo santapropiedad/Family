@@ -9,6 +9,7 @@ import * as billsService from "@/services/bills";
 import * as memoriesService from "@/services/memories";
 import * as membersService from "@/services/members";
 import { AppError } from "@/lib/errors";
+import { postponeDue } from "@/lib/taskTime";
 import type { Bill, ShoppingItem } from "@/types/domain";
 
 export interface ToolContext {
@@ -121,6 +122,46 @@ export const TOOLS: ToolDefinition[] = [
       return { deleted: true };
     },
   },
+  {
+    name: "update_task",
+    description: "Edita el título, fecha límite, hora límite o prioridad de una tarea existente.",
+    parameters: {
+      type: "object",
+      properties: {
+        task_id: str("ID de la tarea"),
+        title: str("Nuevo título, si se quiere cambiar"),
+        due_date: str("Nueva fecha límite YYYY-MM-DD"),
+        due_time: str("Nueva hora límite HH:MM:SS"),
+        priority: str("red, yellow o green", { enum: ["red", "yellow", "green"] }),
+      },
+      required: ["task_id"],
+    },
+    confirmationLevel: "auto",
+    requiredCapability: "tasks:manage_own",
+    handler: async (ctx, params) =>
+      tasksService.updateTask(ctx.familyId, params.task_id as string, {
+        title: params.title as string | undefined,
+        dueDate: (params.due_date as string) ?? undefined,
+        dueTime: (params.due_time as string) ?? undefined,
+        priority: params.priority as tasksService.UpdateTaskInput["priority"],
+      }),
+  },
+  {
+    name: "postpone_task",
+    description: "Pospone la hora límite de una tarea una cantidad de minutos (ej. 15, 60, 1440 para un día).",
+    parameters: {
+      type: "object",
+      properties: { task_id: str("ID de la tarea"), minutes: num("Minutos a postergar") },
+      required: ["task_id", "minutes"],
+    },
+    confirmationLevel: "auto",
+    requiredCapability: "tasks:manage_own",
+    handler: async (ctx, params) => {
+      const task = await tasksService.getTask(ctx.familyId, params.task_id as string);
+      const { dueDate, dueTime } = postponeDue(task, params.minutes as number);
+      return tasksService.updateTask(ctx.familyId, task.id, { dueDate, dueTime });
+    },
+  },
 
   // --- Eventos ---
   {
@@ -185,6 +226,48 @@ export const TOOLS: ToolDefinition[] = [
       return { deleted: true };
     },
   },
+  {
+    name: "update_event",
+    description: "Edita el título, fecha/hora de inicio o el lugar de un evento existente.",
+    parameters: {
+      type: "object",
+      properties: {
+        event_id: str("ID del evento"),
+        title: str("Nuevo título, si se quiere cambiar"),
+        start_at: str("Nueva fecha y hora ISO 8601 de inicio"),
+        location: str("Nuevo lugar"),
+      },
+      required: ["event_id"],
+    },
+    confirmationLevel: "auto",
+    requiredCapability: "events:manage",
+    handler: async (ctx, params) =>
+      eventsService.updateEvent(ctx.familyId, params.event_id as string, {
+        title: params.title as string | undefined,
+        startAt: params.start_at as string | undefined,
+        location: (params.location as string) ?? undefined,
+      }),
+  },
+  {
+    name: "postpone_event",
+    description: "Pospone el inicio de un evento una cantidad de minutos (ej. 15, 60, 1440 para un día).",
+    parameters: {
+      type: "object",
+      properties: { event_id: str("ID del evento"), minutes: num("Minutos a postergar") },
+      required: ["event_id", "minutes"],
+    },
+    confirmationLevel: "auto",
+    requiredCapability: "events:manage",
+    handler: async (ctx, params) => {
+      const event = await eventsService.getEvent(ctx.familyId, params.event_id as string);
+      const now = new Date();
+      const current = new Date(event.start_at);
+      const base = current.getTime() > now.getTime() ? current : now;
+      const minutes = params.minutes as number;
+      const startAt = new Date(base.getTime() + minutes * 60000).toISOString();
+      return eventsService.updateEvent(ctx.familyId, event.id, { startAt });
+    },
+  },
 
   // --- Recordatorios ---
   {
@@ -230,6 +313,46 @@ export const TOOLS: ToolDefinition[] = [
     handler: async (ctx, params) => {
       await remindersService.deleteReminder(ctx.familyId, params.reminder_id as string);
       return { deleted: true };
+    },
+  },
+  {
+    name: "update_reminder",
+    description: "Edita el texto o la fecha/hora de un recordatorio existente.",
+    parameters: {
+      type: "object",
+      properties: {
+        reminder_id: str("ID del recordatorio"),
+        title: str("Nuevo texto del recordatorio"),
+        remind_at: str("Nueva fecha y hora ISO 8601"),
+      },
+      required: ["reminder_id"],
+    },
+    confirmationLevel: "auto",
+    requiredCapability: "reminders:manage",
+    handler: async (ctx, params) =>
+      remindersService.updateReminder(ctx.familyId, params.reminder_id as string, {
+        title: params.title as string | undefined,
+        remind_at: params.remind_at as string | undefined,
+      }),
+  },
+  {
+    name: "postpone_reminder",
+    description: "Pospone un recordatorio una cantidad de minutos (ej. 15, 60, 1440 para un día).",
+    parameters: {
+      type: "object",
+      properties: { reminder_id: str("ID del recordatorio"), minutes: num("Minutos a postergar") },
+      required: ["reminder_id", "minutes"],
+    },
+    confirmationLevel: "auto",
+    requiredCapability: "reminders:manage",
+    handler: async (ctx, params) => {
+      const reminder = await remindersService.getReminder(ctx.familyId, params.reminder_id as string);
+      const now = new Date();
+      const current = new Date(reminder.remind_at);
+      const base = current.getTime() > now.getTime() ? current : now;
+      const minutes = params.minutes as number;
+      const remind_at = new Date(base.getTime() + minutes * 60000).toISOString();
+      return remindersService.updateReminder(ctx.familyId, reminder.id, { remind_at });
     },
   },
 
@@ -411,6 +534,17 @@ export const TOOLS: ToolDefinition[] = [
       return { total, byCategory };
     },
   },
+  {
+    name: "delete_expense",
+    description: "Elimina un gasto registrado de forma permanente.",
+    parameters: { type: "object", properties: { expense_id: str("ID del gasto") }, required: ["expense_id"] },
+    confirmationLevel: "confirm",
+    requiredCapability: "finances:manage",
+    handler: async (ctx, params) => {
+      await expensesService.deleteExpense(ctx.familyId, params.expense_id as string);
+      return { deleted: true };
+    },
+  },
 
   // --- Casa: mantenciones y cuentas ---
   {
@@ -445,12 +579,50 @@ export const TOOLS: ToolDefinition[] = [
     handler: async (ctx) => maintenanceService.listMaintenance(ctx.familyId),
   },
   {
+    name: "delete_maintenance",
+    description: "Elimina un equipo o artefacto del hogar y su calendario de mantención.",
+    parameters: { type: "object", properties: { maintenance_id: str("ID de la mantención") }, required: ["maintenance_id"] },
+    confirmationLevel: "confirm",
+    requiredCapability: "maintenance:manage",
+    handler: async (ctx, params) => {
+      await maintenanceService.deleteMaintenance(ctx.familyId, params.maintenance_id as string);
+      return { deleted: true };
+    },
+  },
+  {
     name: "list_bills",
     description: "Consulta cuentas del hogar (luz, agua, internet, etc.) y su estado de pago.",
     parameters: { type: "object", properties: { status: str("pending, paid u overdue") } },
     confirmationLevel: "auto",
     requiredCapability: null,
     handler: async (ctx, params) => billsService.listBills(ctx.familyId, params.status as Bill["status"]),
+  },
+  {
+    name: "create_bill",
+    description: "Registra una cuenta del hogar nueva (luz, agua, internet, etc.) con su monto y vencimiento.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: str("Nombre de la cuenta (ej. Electricidad, Agua, Internet)"),
+        provider: str("Proveedor, si se menciona"),
+        amount: num("Monto en pesos"),
+        due_date: str("Fecha de vencimiento YYYY-MM-DD"),
+        frequency: str("once, monthly, bimonthly, quarterly o annual", {
+          enum: ["once", "monthly", "bimonthly", "quarterly", "annual"],
+        }),
+      },
+      required: ["name", "amount", "due_date"],
+    },
+    confirmationLevel: "auto",
+    requiredCapability: "bills:manage",
+    handler: async (ctx, params) =>
+      billsService.createBill(ctx.familyId, {
+        name: params.name as string,
+        provider: (params.provider as string) ?? null,
+        amount: params.amount as number,
+        dueDate: params.due_date as string,
+        frequency: params.frequency as Bill["frequency"],
+      }),
   },
   {
     name: "pay_bill",
